@@ -1094,12 +1094,131 @@ with tab_alvo:
     st.markdown('<div class="section-header">🎯 Análise de Sensibilidade e Simulação</div>', unsafe_allow_html=True)
     
     # Criar sub-tabs para organizar as análises
-    subtab1, subtab2, subtab3, subtab4 = st.tabs([
+    subtab_sim_taxa, subtab1, subtab2, subtab3, subtab4 = st.tabs([
+        "🚀 Simulador de Taxa",
         "📊 Sensibilidade de Taxa",
         "🔥 Simulador de Cenários",
         "⚖️ Break-even Analysis",
         "🌡️ Heatmap de Risco"
     ])
+    
+    # ============================================================
+    # SUB-ABA 0: SIMULADOR DE TAXA (juros + taxas + PDD)
+    # ============================================================
+    with subtab_sim_taxa:
+        st.markdown("### Simulador de Taxa do Empréstimo (com TAC, mora/multa e PDD)")
+        st.caption("Calcule a taxa efetiva do crédito considerando juros, TAC, atraso, multa e probabilidade de PDD.")
+
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            ticket = st.number_input("Ticket (principal)", min_value=1_000.0, value=1_000_000.0, step=50_000.0, format="%.2f")
+            preco_compra = st.number_input("Preço de compra (R$)", min_value=0.0, value=ticket, step=50_000.0, format="%.2f")
+            prazo_dias = st.number_input("Prazo (dias)", min_value=1, value=360, step=30)
+            taxa_juros_am = st.number_input("Juros a.m. (%)", min_value=0.0, value=float(taxa_carteira_am_pct), step=0.25, format="%.2f") / 100.0
+        with col_b:
+            tac_val = st.number_input("TAC (R$, upfront)", min_value=0.0, value=20_000.0, step=5_000.0, format="%.2f")
+            mora_pct = st.number_input("Mora (% a.m. sobre inadimplente)", min_value=0.0, value=1.0, step=0.1, format="%.2f") / 100.0
+            multa_pct = st.number_input("Multa (% flat na perda)", min_value=0.0, value=2.0, step=0.1, format="%.2f") / 100.0
+        with col_c:
+            prob_pdd_pct = st.number_input("Probabilidade de PDD (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5, format="%.2f")
+            dias_atraso = st.number_input("Dias de atraso (para mora)", min_value=0, value=0, step=1)
+
+        prob_pdd = prob_pdd_pct / 100.0
+
+        # Juros proporcionais ao prazo (base 30 dias corridos por mês) sobre todo o principal
+        taxa_juros_dia = (1 + taxa_juros_am) ** (1/30) - 1
+        juros_total = ticket * (((1 + taxa_juros_dia) ** prazo_dias) - 1)
+
+        # Penalidades: multa flat sobre o principal + mora proporcional aos dias de atraso sobre o principal
+        mora_dia = mora_pct / 30.0
+        multa_val = ticket * multa_pct
+        mora_val = ticket * mora_dia * dias_atraso
+        penalidade = multa_val + mora_val
+
+        # Fluxos: saída inicial + entrada única no vencimento (principal + juros + penalidades)
+        cfs = [-preco_compra + tac_val]
+        recebimento_final = ticket + juros_total + penalidade
+        cfs.append(recebimento_final)
+
+        def calc_irr(vals):
+            arr = np.array(vals, dtype=float)
+            # precisa de pelo menos um fluxo positivo e um negativo
+            if not (np.any(arr > 0) and np.any(arr < 0)):
+                return np.nan
+            # 1) Tenta numpy_financial, se existir
+            try:
+                import numpy_financial as npf  # type: ignore
+                return float(npf.irr(arr))
+            except Exception:
+                pass
+            # 2) Tenta np.irr (deprecated/ausente em numpy>=2)
+            irr_attr = getattr(np, "irr", None)
+            if irr_attr is not None:
+                try:
+                    return float(irr_attr(arr))
+                except Exception:
+                    pass
+            # 3) Newton-Raphson simples como fallback
+            r = 0.1
+            for _ in range(100):
+                denom = (1 + r) ** np.arange(len(arr))
+                f = np.sum(arr / denom)
+                df = np.sum(-np.arange(len(arr)) * arr / ((1 + r) ** (np.arange(len(arr)) + 1)))
+                if df == 0:
+                    break
+                r_new = r - f / df
+                if not np.isfinite(r_new):
+                    break
+                if abs(r_new - r) < 1e-8:
+                    return r_new
+                r = r_new
+            return np.nan
+
+        # TIR bruta: extrai taxa diária dos dois fluxos e converte para mês (30d) e ano (365d)
+        irr_d = np.nan
+        if recebimento_final > 0 and (-cfs[0]) > 0:
+            irr_d = (recebimento_final / (-cfs[0])) ** (1 / prazo_dias) - 1
+        irr_valid = irr_d is not None and not np.isnan(irr_d)
+        irr_m = (1 + irr_d) ** 30 - 1 if irr_valid else np.nan
+        irr_a = (1 + irr_d) ** 365 - 1 if irr_valid else np.nan
+
+        # TIR líquida: aplica PDD como redutor percentual da TIR (LGD)
+        pdd_esperada = ticket * prob_pdd
+        irr_m_liq = irr_m * (1 - prob_pdd) if irr_valid else np.nan
+        irr_liq_valid = irr_m_liq is not None and not np.isnan(irr_m_liq)
+        irr_a_liq = (1 + irr_m_liq) ** 12 - 1 if irr_liq_valid else np.nan
+        retorno_periodo = (recebimento_final / (-cfs[0])) - 1 if irr_valid else np.nan
+        retorno_periodo_liq = retorno_periodo * (1 - prob_pdd) if irr_valid else np.nan
+
+        col_k1, col_k2, col_k3, col_k4, col_k5 = st.columns(5)
+        col_k1.metric("Retorno do período (bruto)", f"{retorno_periodo*100:.2f}%" if irr_valid else "N/A")
+        col_k2.metric("Retorno do período (líquido PDD)", f"{retorno_periodo_liq*100:.2f}%" if irr_liq_valid else "N/A")
+        col_k3.metric("TIR mensal (bruta)", f"{irr_m*100:.2f}%" if irr_valid else "N/A")
+        col_k4.metric("TIR mensal líquida (após PDD)", f"{irr_m_liq*100:.2f}%" if irr_liq_valid else "N/A")
+        col_k5.metric("TIR anualizada líquida", f"{irr_a_liq*100:.2f}%" if irr_liq_valid else "N/A")
+
+        # Pequena visão dos fluxos e total a receber
+        total_inflow = recebimento_final + tac_val
+        st.markdown("##### Resumo dos fluxos")
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            st.metric("Total a receber (R$)", format_brl(total_inflow))
+            st.metric("Receita de juros total (R$)", format_brl(juros_total))
+        with col_f2:
+            st.metric("Penalidades esperadas (R$)", format_brl(penalidade))
+            st.metric("TAC (R$)", format_brl(tac_val))
+            st.metric("PDD esperada (R$)", format_brl(pdd_esperada))
+
+        with st.expander("Hipóteses do simulador"):
+            st.markdown(
+                """
+                - Operação bullet simples: juros mensais sobre o saldo total, principal no vencimento.
+                - TAC recebida upfront, somada ao fluxo inicial.
+                - PDD é apenas informativa para penalidades; não reduz a base de juros nem o principal performing.
+                - Mora e multa são percentuais mensais aplicados sobre a fração inadimplente.
+                - Ajuste os campos para refletir políticas específicas (ex.: parcelas iguais, amortizações, outros encargos).
+                """
+            )
     
     # ============================================================
     # SUB-ABA 1: SENSIBILIDADE DE TAXA DA CARTEIRA
