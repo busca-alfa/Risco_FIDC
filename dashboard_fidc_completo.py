@@ -233,51 +233,80 @@ st.sidebar.caption(
     "Os pesos são reescalados automaticamente para 100%."
 )
 
-st.sidebar.markdown("**0–15 dias**")
-c1, c2 = st.sidebar.columns(2)
-with c1:
-    pct_0_15 = st.number_input("% carteira", 0.0, 1000.0, 80.0, 1.0, key="pct_0_15")
-with c2:
-    prov_0_15 = st.number_input("% provisão", 0.0, 100.0, 0.5, 0.1, key="prov_0_15") # Ajustei default para 0.5% (prudência)
+st.sidebar.caption("Valores iniciais seguem a política interna: bucket 0–30 com 95% da carteira, demais 0,5% e último 1,5%.")
 
-st.sidebar.markdown("**16–30 dias**")
+st.sidebar.markdown("**0–30 dias**")
 c1, c2 = st.sidebar.columns(2)
 with c1:
-    pct_16_30 = st.number_input("% carteira", 0.0, 1000.0, 15.0, 1.0, key="pct_16_30")
+    pct_0_30 = st.number_input("% carteira", 0.0, 1000.0, 95.0, 0.1, key="pct_0_30")
 with c2:
-    prov_16_30 = st.number_input("% provisão", 0.0, 100.0, 5.0, 1.0, key="prov_16_30")
+    prov_0_30 = st.number_input("% provisão", 0.0, 100.0, 0.0, 0.5, key="prov_0_30")
 
 st.sidebar.markdown("**31–60 dias**")
 c1, c2 = st.sidebar.columns(2)
 with c1:
-    pct_31_60 = st.number_input("% carteira", 0.0, 1000.0, 10.0, 1.0, key="pct_31_60")
+    pct_31_60 = st.number_input("% carteira", 0.0, 1000.0, 0.5, 0.1, key="pct_31_60")
 with c2:
-    prov_31_60 = st.number_input("% provisão", 0.0, 100.0, 15.0, 1.0, key="prov_31_60")
+    prov_31_60 = st.number_input("% provisão", 0.0, 100.0, 5.0, 0.5, key="prov_31_60")
 
 st.sidebar.markdown("**61–90 dias**")
 c1, c2 = st.sidebar.columns(2)
 with c1:
-    pct_61_90 = st.number_input("% carteira", 0.0, 1000.0, 5.0, 1.0, key="pct_61_90")
+    pct_61_90 = st.number_input("% carteira", 0.0, 1000.0, 0.5, 0.1, key="pct_61_90")
 with c2:
-    prov_61_90 = st.number_input("% provisão", 0.0, 100.0, 30.0, 1.0, key="prov_61_90")
+    prov_61_90 = st.number_input("% provisão", 0.0, 100.0, 15.0, 0.5, key="prov_61_90")
 
-st.sidebar.markdown("**91–180 dias**")
+st.sidebar.markdown("**91–120 dias**")
 c1, c2 = st.sidebar.columns(2)
 with c1:
-    pct_91_180 = st.number_input("% carteira", 0.0, 1000.0, 5.0, 1.0, key="pct_91_180")
+    pct_91_120 = st.number_input("% carteira", 0.0, 1000.0, 0.5, 0.1, key="pct_91_120")
 with c2:
-    prov_91_180 = st.number_input("% provisão", 0.0, 100.0, 50.0, 1.0, key="prov_91_180")
+    prov_91_120 = st.number_input("% provisão", 0.0, 100.0, 20.0, 0.5, key="prov_91_120")
 
-st.sidebar.markdown("**> 180 dias**")
+st.sidebar.markdown("**121–150 dias**")
 c1, c2 = st.sidebar.columns(2)
 with c1:
-    pct_180p = st.number_input("% carteira", 0.0, 1000.0, 5.0, 1.0, key="pct_180p")
+    pct_121_150 = st.number_input("% carteira", 0.0, 1000.0, 0.5, 0.1, key="pct_121_150")
 with c2:
-    prov_180p = st.number_input("% provisão", 0.0, 100.0, 100.0, 1.0, key="prov_180p")
+    prov_121_150 = st.number_input("% provisão", 0.0, 100.0, 40.0, 0.5, key="prov_121_150")
+
+st.sidebar.markdown("**151–180 dias**")
+c1, c2 = st.sidebar.columns(2)
+with c1:
+    pct_151_180 = st.number_input("% carteira", 0.0, 1000.0, 0.5, 0.1, key="pct_151_180")
+with c2:
+    prov_151_180 = st.number_input("% provisão", 0.0, 100.0, 50.0, 0.5, key="prov_151_180")
+
+st.sidebar.markdown("**181–240 dias**")
+c1, c2 = st.sidebar.columns(2)
+with c1:
+    pct_181_240 = st.number_input("% carteira", 0.0, 1000.0, 0.5, 0.1, key="pct_181_240")
+with c2:
+    prov_181_240 = st.number_input("% provisão", 0.0, 100.0, 70.0, 0.5, key="prov_181_240")
+
+st.sidebar.markdown("**241–300 dias**")
+c1, c2 = st.sidebar.columns(2)
+with c1:
+    pct_241_300 = st.number_input("% carteira", 0.0, 1000.0, 0.5, 0.1, key="pct_241_300")
+with c2:
+    prov_241_300 = st.number_input("% provisão", 0.0, 100.0, 85.0, 0.5, key="prov_241_300")
+
+st.sidebar.markdown("**> 300 dias**")
+c1, c2 = st.sidebar.columns(2)
+with c1:
+    pct_300p = st.number_input("% carteira", 0.0, 1000.0, 1.5, 0.1, key="pct_300p")
+with c2:
+    prov_300p = st.number_input("% provisão", 0.0, 100.0, 100.0, 0.5, key="prov_300p")
 
 # --- CÁLCULO E NORMALIZAÇÃO ---
-buckets_raw = np.array([pct_0_15, pct_16_30, pct_31_60, pct_61_90, pct_91_180, pct_180p])
-provs_raw = np.array([prov_0_15, prov_16_30, prov_31_60, prov_61_90, prov_91_180, prov_180p])
+buckets_raw = np.array([
+    pct_0_30, pct_31_60, pct_61_90, pct_91_120, pct_121_150,
+    pct_151_180, pct_181_240, pct_241_300, pct_300p
+])
+provs_raw = np.array([
+    prov_0_30, prov_31_60, prov_61_90, prov_91_120, prov_121_150,
+    prov_151_180, prov_181_240, prov_241_300, prov_300p
+])
 
 total_raw = buckets_raw.sum()
 
@@ -328,8 +357,8 @@ custo_adm_dia    = pl_total * taxa_adm_diaria
 custo_gestao_dia = pl_total * taxa_gestao_diaria
 
 prov_rates = np.array([
-    prov_0_15, prov_16_30, prov_31_60,
-    prov_61_90, prov_91_180, prov_180p
+    prov_0_30, prov_31_60, prov_61_90, prov_91_120, prov_121_150,
+    prov_151_180, prov_181_240, prov_241_300, prov_300p
 ]) / 100.0
 
 taxa_perda_esperada = float(np.sum(buckets_pct_norm * prov_rates))
@@ -844,17 +873,60 @@ with tab_estrutura:
 # ABA 2 – RISCO, PDD & SUBORDINAÇÃO (cenário base)
 # -------------------------------------------------------------------
 with tab_risco:
-    st.subheader("PDD por faixa de atraso (cenário base)")
+    st.markdown("### Painel do Risco – PDD & Subordinação")
 
-    buckets = ["0–15", "16–30", "31–60", "61–90", "91–180", ">180"]
-    pct_vec   = np.array([pct_0_15, pct_16_30, pct_31_60, pct_61_90, pct_91_180, pct_180p])
-    prov_vec  = np.array([prov_0_15, prov_16_30, prov_31_60, prov_61_90, prov_91_180, prov_180p])
+    # ---- KPIs principais do risco ----
+    folga_limite = perda_lim_sub - pdd_base
+    folga_pct = folga_limite / perda_lim_sub * 100 if perda_lim_sub > 0 else 0.0
+    cobertura_jr_x = valor_junior / pdd_base if pdd_base > 0 else np.inf
 
-    if pct_vec.sum() > 0:
-        pct_norm = pct_vec / pct_vec.sum()
-    else:
-        pct_norm = np.zeros_like(pct_vec)
+    cR1, cR2, cR3, cR4 = st.columns(4)
+    cR1.metric(
+        "PDD Base (estoque)",
+        format_brl(pdd_base),
+        delta=f"{taxa_perda_esperada*100:.2f}% dos recebíveis",
+        delta_color="off",
+        help="PDD esperada aplicada sobre a carteira atual (bucketizada)."
+    )
+    cR2.metric(
+        "Limite por Subordinação",
+        format_brl(perda_lim_sub),
+        delta=f"{perda_lim_sub_pct_recebiveis*100:.2f}% dos recebíveis",
+        delta_color="off",
+        help="Perda máxima antes de violar o índice mínimo de subordinação informado."
+    )
+    cR3.metric(
+        "Folga vs Limite",
+        format_brl(folga_limite),
+        delta=f"{folga_pct:.1f}% de folga" if perda_lim_sub > 0 else "N/A",
+        delta_color="normal" if folga_limite >= 0 else "inverse",
+        help="Se negativo, já há desenquadramento em relação ao limite de perda."
+    )
+    cR4.metric(
+        "Cobertura Júnior vs PDD",
+        f"{cobertura_jr_x:.1f}x" if np.isfinite(cobertura_jr_x) else "∞",
+        delta=f"PL Jr: {format_brl(valor_junior)}",
+        delta_color="off",
+        help="Quantas vezes o PL Júnior cobre a PDD base."
+    )
 
+    st.markdown("---")
+    st.markdown("#### Distribuição de PDD por faixa de atraso")
+
+    buckets = [
+        "0–30", "31–60", "61–90", "91–120", "121–150",
+        "151–180", "181–240", "241–300", ">300"
+    ]
+    pct_vec   = np.array([
+        pct_0_30, pct_31_60, pct_61_90, pct_91_120, pct_121_150,
+        pct_151_180, pct_181_240, pct_241_300, pct_300p
+    ])
+    prov_vec  = np.array([
+        prov_0_30, prov_31_60, prov_61_90, prov_91_120, prov_121_150,
+        prov_151_180, prov_181_240, prov_241_300, prov_300p
+    ])
+
+    pct_norm = pct_vec / pct_vec.sum() if pct_vec.sum() > 0 else np.zeros_like(pct_vec)
     perda_base_bucket = valor_recebiveis * pct_norm * (prov_vec / 100.0)
 
     df_pdd = pd.DataFrame({
@@ -865,61 +937,154 @@ with tab_risco:
         "Perda esperada (R$)": perda_base_bucket
     })
 
-    st.dataframe(
-        df_pdd.style.format({
-            "% carteira (input)": "{:.1f}",
-            "% carteira (normalizada)": "{:.1f}",
-            "Provisão % (input)": "{:.1f}",
-            "Perda esperada (R$)": "R$ {:,.2f}".format,
-        }),
-        use_container_width=True,
-        height=260
-    )
-
-    st.bar_chart(
-        df_pdd.set_index("Faixa (dias)")["Perda esperada (R$)"],
-        height=260
-    )
-
-    st.markdown("---")
-    colR1, colR2, colR3 = st.columns(3)
-    colR1.metric("Taxa de perda esperada (sobre recebíveis)", format_pct(taxa_perda_esperada))
-    colR2.metric("PDD Base (estoque)", format_brl(pdd_base))
-    colR3.metric("PDD usada no P&L (dia)", format_brl(pdd_dia))
-
-    st.markdown("---")
-    colR4, colR5 = st.columns(2)
-    colR4.metric("Perda limite mantendo subordinação mínima (R$)", format_brl(perda_lim_sub))
-    colR5.metric("Perda limite mantendo subordinação mínima (% dos recebíveis)",
-                 format_pct(perda_lim_sub_pct_recebiveis))
-
-    st.markdown(
-        """
-        *Lógica:*  
-        - Considera-se que as perdas vão primeiro na Cota Júnior.  
-        - Calcula-se a perda máxima **L** tal que, após essa perda, o índice Júnior / PL 
-          ainda é maior ou igual ao índice mínimo de subordinação informado.
-        """
-    )
+    col_tbl, col_chart = st.columns([1.3, 1])
+    with col_tbl:
+        st.dataframe(
+            df_pdd.style.format({
+                "% carteira (input)": "{:.1f}",
+                "% carteira (normalizada)": "{:.1f}",
+                "Provisão % (input)": "{:.1f}",
+                "Perda esperada (R$)": "R$ {:,.2f}".format,
+            }),
+            use_container_width=True,
+            height=260
+        )
+    with col_chart:
+        fig_buckets = go.Figure()
+        fig_buckets.add_trace(
+            go.Bar(
+                x=df_pdd["Perda esperada (R$)"],
+                y=df_pdd["Faixa (dias)"],
+                orientation="h",
+                marker_color="#e67e22",
+                text=[format_brl(v) for v in df_pdd["Perda esperada (R$)"]],
+                textposition="outside",
+                name="Perda esperada"
+            )
+        )
+        fig_buckets.update_layout(
+            margin=dict(l=10, r=10, t=20, b=10),
+            height=260,
+            showlegend=False,
+            xaxis_title="Perda esperada (R$)"
+        )
+        st.plotly_chart(fig_buckets, use_container_width=True)
 
     st.markdown("---")
+    st.markdown("#### PDD Base x Limite de Subordinação")
+
+    # Barra tipo bullet: PDD base + folga até o limite
+    barra_folga = max(perda_lim_sub - pdd_base, 0)
+    fig_limit = go.Figure()
+    fig_limit.add_trace(go.Bar(
+        y=["Exposição a perda"],
+        x=[pdd_base],
+        orientation="h",
+        name="PDD Base",
+        marker_color="#c0392b",
+        text=[format_brl(pdd_base)],
+        textposition="inside"
+    ))
+    fig_limit.add_trace(go.Bar(
+        y=["Exposição a perda"],
+        x=[barra_folga],
+        orientation="h",
+        name="Folga até limite",
+        marker_color="#27ae60",
+        text=[format_brl(barra_folga)],
+        textposition="inside"
+    ))
+    fig_limit.add_shape(
+        type="line",
+        x0=perda_lim_sub, x1=perda_lim_sub,
+        y0=-0.5, y1=0.5,
+        line=dict(color="black", dash="dash", width=2)
+    )
+    fig_limit.update_layout(
+        barmode="stack",
+        height=180,
+        margin=dict(l=30, r=30, t=20, b=20),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5),
+        xaxis_title="R$",
+    )
+    st.plotly_chart(fig_limit, use_container_width=True)
+
+    # Alertas / mensagens resumidas
     impacto_junior = valor_junior - pdd_base
-
-    colR6, colR7 = st.columns(2)
-    colR6.metric("Colchão atual da Cota Júnior", format_brl(valor_junior))
-    colR7.metric("Colchão Júnior após PDD Base", format_brl(impacto_junior))
-
-    if impacto_junior < 0:
-        st.error("⚠️ No cenário base, a PDD consumiria mais do que o colchão atual da Cota Júnior.")
-    elif pdd_base > perda_lim_sub:
-        st.warning(
-            "⚠️ A PDD base é maior que a perda limite compatível com o índice mínimo de subordinação. "
-            "Seria necessária recomposição de subordinação ou amortização de cotas seniores."
-        )
+    if folga_limite < 0:
+        st.error("⚠️ PDD base ultrapassa o limite de perda pela subordinação mínima. Recompor subordinação ou reduzir risco.")
+    elif impacto_junior < 0:
+        st.warning("⚠️ A PDD base consome todo o colchão da Cota Júnior.")
     else:
-        st.success(
-            "✅ No cenário base, a PDD está abaixo da perda limite compatível com o índice mínimo de subordinação."
+        st.success("✅ PDD base abaixo do limite de perda e preservando o colchão da Cota Júnior.")
+
+    st.markdown("---")
+    st.markdown("#### Simulação dinâmica: perda x índice de subordinação")
+
+    if pl_total <= 0:
+        st.info("Informe um PL total maior que zero para simular a subordinação.")
+    else:
+        perda_ref = pdd_base if pdd_base > 0 else valor_junior * 0.2
+        perda_max = max(perda_ref * 2, valor_junior * 1.2, pl_total * 0.3, 1_000.0)
+        perda_sim = st.slider(
+            "Perda simulada (R$)",
+            min_value=0.0,
+            max_value=float(perda_max),
+            value=float(min(perda_ref, perda_max)),
+            step=float(max(perda_max / 100, 100.0)),
+            help="Escolha um valor de perda e veja o índice Júnior/PL após o choque."
         )
+
+        # Curva de subordinação ao longo de perdas
+        perdas_grid = np.linspace(0, perda_max, 60)
+        sub_grid = []
+        for perda in perdas_grid:
+            pl_sim = max(pl_total - perda, 1e-9)
+            jr_sim = max(valor_junior - perda, 0.0)
+            sub_grid.append(jr_sim / pl_sim * 100)
+
+        pl_sim_sel = max(pl_total - perda_sim, 1e-9)
+        jr_sim_sel = max(valor_junior - perda_sim, 0.0)
+        sub_sel = jr_sim_sel / pl_sim_sel * 100
+
+        fig_sub = go.Figure()
+        fig_sub.add_trace(go.Scatter(
+            x=perdas_grid,
+            y=sub_grid,
+            mode="lines",
+            name="Subordinação simulada (Jr / PL)",
+            line=dict(width=3, color="#1f77b4")
+        ))
+        fig_sub.add_trace(go.Scatter(
+            x=[perda_sim],
+            y=[sub_sel],
+            mode="markers+text",
+            name="Perda escolhida",
+            marker=dict(size=10, color="#d62728", symbol="diamond"),
+            text=[f"{sub_sel:.2f}%"],
+            textposition="top center"
+        ))
+        fig_sub.add_hline(
+            y=sub_min_pct,
+            line_dash="dash",
+            line_color="gray",
+            annotation_text=f"Subordinação mínima: {sub_min_pct:.1f}%",
+            annotation_position="bottom right"
+        )
+        fig_sub.update_layout(
+            height=320,
+            xaxis_title="Perda (R$)",
+            yaxis_title="Índice Júnior / PL (%)",
+            margin=dict(l=40, r=40, t=40, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
+        )
+        st.plotly_chart(fig_sub, use_container_width=True)
+
+        col_sim1, col_sim2, col_sim3 = st.columns(3)
+        col_sim1.metric("Perda simulada", format_brl(perda_sim))
+        col_sim2.metric("PL pós-perda", format_brl(pl_sim_sel))
+        col_sim3.metric("Subordinação pós-perda", f"{sub_sel:.2f}%")
 
 # -------------------------------------------------------------------
 # -------------------------------------------------------------------
