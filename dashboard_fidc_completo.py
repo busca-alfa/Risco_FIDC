@@ -1695,6 +1695,7 @@ with tab_dre:
         "% PL em recebíveis": [base_pct_recebiveis] * 12,
         "Outras receitas (R$/mês)": [base_outras_receitas_mes] * 12,
         "Outros custos (R$/mês)": [base_outros_custos_mes] * 12,
+        "PDD manual (R$/mês)": [0.0] * 12,
         # Movimento líquido: + = aporte, - = resgate
         "Movimento Júnior (R$/mês)": [0.0] * 12,
         "Movimento Mezz (R$/mês)": [0.0] * 12,
@@ -1750,6 +1751,7 @@ with tab_dre:
 
         outras_receitas_mes  = float(row["Outras receitas (R$/mês)"])
         outros_custos_mes    = float(row["Outros custos (R$/mês)"])
+        pdd_manual_mes       = float(row["PDD manual (R$/mês)"])
 
         taxa_carteira_diaria_mes = mensal_to_diario(taxa_carteira_am_mes)
 
@@ -1770,8 +1772,12 @@ with tab_dre:
         custo_gestao_mes = pl_total_mov  * taxa_gestao_diaria * dias_uteis_mes
 
         # PDD aproximada mensal: % de perda esperada sobre recebíveis no ano,
-        # rateado em 12 meses
-        pdd_mes = valor_recebiveis_mes * taxa_perda_esperada / meses_ano
+        # rateado em 12 meses. Soma valor manual informado.
+        pdd_auto_mes = (
+            valor_recebiveis_mes * taxa_perda_esperada / meses_ano
+            if incluir_pdd else 0.0
+        )
+        pdd_mes = pdd_manual_mes + pdd_auto_mes
 
         custo_outros_mes_sim = outros_custos_mes
 
@@ -1790,10 +1796,12 @@ with tab_dre:
         resultado_junior_mes = resultado_fundo_mes
 
         # ----- PL FINAL DO MÊS -----
+        # Sênior e Mezz recebem juros; acumula o saldo já com o custo do mês.
+        pl_mezz_final   = pl_mezz_mov + custo_mezz_mes
+        pl_senior_final = pl_senior_mov + custo_senior_mes
         pl_junior_final = pl_junior_mov + resultado_junior_mes
-        pl_mezz_final   = pl_mezz_mov   # Mezz só muda por movimento líquido
-        pl_senior_final = pl_senior_mov # Sênior só muda por movimento líquido
-        pl_total_final  = pl_junior_final + pl_mezz_final + pl_senior_final
+        # Total mostrado na visão gráfica reflete apenas Sênior + Mezz (saldo + juros)
+        pl_total_final  = pl_mezz_final + pl_senior_final
 
         # Retorno da Júnior no mês (% sobre PL após movimentos)
         base_retorno_jr = pl_junior_mov if pl_junior_mov != 0 else 1.0
@@ -1814,7 +1822,6 @@ with tab_dre:
             "Taxa Gestão (R$)": custo_gestao_mes,
             "PDD (R$)": pdd_mes,
             "Outros Custos (R$)": custo_outros_mes_sim,
-            "Resultado Fundo (R$)": resultado_fundo_mes,
             "Resultado Cota Júnior (R$)": resultado_junior_mes,
             "PL Final (R$)": pl_total_final,
             "PL Final Júnior (R$)": pl_junior_final,
