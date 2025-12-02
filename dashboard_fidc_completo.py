@@ -1103,120 +1103,460 @@ with tab_alvo:
     ])
     
     # ============================================================
-    # SUB-ABA 0: SIMULADOR DE TAXA (juros + taxas + PDD)
+    # SUB-ABA 0: SIMULADOR DE TAXA (VERSÃO CORRIGIDA)
     # ============================================================
     with subtab_sim_taxa:
-        st.markdown("### Simulador de Taxa do Empréstimo (com TAC, mora/multa e PDD)")
-        st.caption("Calcule a taxa efetiva do crédito considerando juros, TAC, atraso, multa e probabilidade de PDD.")
-
+        st.markdown("### 💰 Simulador de Taxa do Empréstimo")
+        st.caption("Calcule a taxa efetiva considerando deságio (calculado pela taxa), TAC, mora/multa e PDD como redutor de rentabilidade")
+        
+        # ========== SEÇÃO 1: PARÂMETROS DE ENTRADA ==========
+        st.markdown('<div class="section-header">📋 Parâmetros da Operação</div>', unsafe_allow_html=True)
+        
         col_a, col_b, col_c = st.columns(3)
+        
         with col_a:
-            ticket = st.number_input("Ticket (principal)", min_value=1_000.0, value=1_000_000.0, step=50_000.0, format="%.2f")
-            preco_compra = st.number_input("Preço de compra (R$)", min_value=0.0, value=ticket, step=50_000.0, format="%.2f")
-            prazo_dias = st.number_input("Prazo (dias)", min_value=1, value=360, step=30)
-            taxa_juros_am = st.number_input("Juros a.m. (%)", min_value=0.0, value=float(taxa_carteira_am_pct), step=0.25, format="%.2f") / 100.0
+            st.markdown("**Estrutura do Crédito:**")
+            ticket = st.number_input(
+                "Valor de Face (R$)", 
+                min_value=1_000.0, 
+                value=1_000_000.0, 
+                step=50_000.0, 
+                format="%.2f",
+                help="Valor que o cliente pagará no vencimento"
+            )
+            taxa_juros_am = st.number_input(
+                "Taxa de Juros (% a.m.)", 
+                min_value=0.0, 
+                value=float(taxa_carteira_am_pct), 
+                step=0.25, 
+                format="%.2f",
+                help="Taxa que define o deságio na compra"
+            ) / 100.0
+            prazo_dias = st.number_input(
+                "Prazo (dias)", 
+                min_value=1, 
+                value=360, 
+                step=30
+            )
+        
         with col_b:
-            tac_val = st.number_input("TAC (R$, upfront)", min_value=0.0, value=20_000.0, step=5_000.0, format="%.2f")
-            mora_pct = st.number_input("Mora (% a.m. sobre inadimplente)", min_value=0.0, value=1.0, step=0.1, format="%.2f") / 100.0
-            multa_pct = st.number_input("Multa (% flat na perda)", min_value=0.0, value=2.0, step=0.1, format="%.2f") / 100.0
+            st.markdown("**Taxas e Encargos:**")
+            tac_val = st.number_input(
+                "Outras Taxas (R$)", 
+                min_value=0.0, 
+                value=20_000.0, 
+                step=5_000.0, 
+                format="%.2f",
+                help="Descontada do desembolso (cliente recebe menos)"
+            )
+            mora_pct = st.number_input(
+                "Mora (% a.m.)", 
+                min_value=0.0, 
+                value=1.0, 
+                step=0.1, 
+                format="%.2f",
+                help="Juros de mora sobre o valor de face"
+            ) / 100.0
+            multa_pct = st.number_input(
+                "Multa (% flat)", 
+                min_value=0.0, 
+                value=2.0, 
+                step=0.1, 
+                format="%.2f",
+                help="Multa sobre o valor de face em caso de atraso"
+            ) / 100.0
+        
         with col_c:
-            prob_pdd_pct = st.number_input("Probabilidade de PDD (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5, format="%.2f")
-            dias_atraso = st.number_input("Dias de atraso (para mora)", min_value=0, value=0, step=1)
-
+            st.markdown("**Risco e Inadimplência:**")
+            prob_pdd_pct = st.number_input(
+                "PDD - Probabilidade de Default (%)", 
+                min_value=0.0, 
+                max_value=100.0, 
+                value=5.0, 
+                step=0.5, 
+                format="%.2f",
+                help="Reduz a taxa efetiva (não é perda de valor)"
+            )
+            dias_atraso = st.number_input(
+                "Dias de Atraso Médio", 
+                min_value=0, 
+                value=0, 
+                step=5,
+                help="Para cálculo de mora"
+            )
+        
         prob_pdd = prob_pdd_pct / 100.0
-
-        # Juros proporcionais ao prazo (base 30 dias corridos por mês) sobre todo o principal
+        
+        # ========== CÁLCULOS ==========
+        
+        # 1. DESÁGIO: Calculado pela taxa de juros (VPL)
+        # Fórmula simplificada: Deságio = Valor de Face × (1 - 1/(1+taxa)^períodos)
+        prazo_meses = prazo_dias / 30.0
+        if taxa_juros_am > 0:
+            fator_desconto = 1 / ((1 + taxa_juros_am) ** prazo_meses)
+            desagio_valor = ticket * (1 - fator_desconto)
+        else:
+            desagio_valor = 0
+        
+        desagio_pct = (desagio_valor / ticket * 100) if ticket > 0 else 0
+        
+        # 2. PREÇO DE COMPRA (sem TAC)
+        preco_compra = ticket - desagio_valor
+        
+        # 3. DESEMBOLSO LÍQUIDO (o que o cliente recebe)
+        desembolso_liquido = preco_compra - tac_val
+        
+        # 4. JUROS TOTAIS (sobre o valor de face)
         taxa_juros_dia = (1 + taxa_juros_am) ** (1/30) - 1
         juros_total = ticket * (((1 + taxa_juros_dia) ** prazo_dias) - 1)
-
-        # Penalidades: multa flat sobre o principal + mora proporcional aos dias de atraso sobre o principal
+        
+        # 5. PENALIDADES (se houver atraso)
         mora_dia = mora_pct / 30.0
-        multa_val = ticket * multa_pct
+        multa_val = ticket * multa_pct if dias_atraso > 0 else 0
         mora_val = ticket * mora_dia * dias_atraso
-        penalidade = multa_val + mora_val
+        penalidade_total = multa_val + mora_val
+        
+        # 6. RECEBIMENTO NO VENCIMENTO
+        recebimento_final = ticket + penalidade_total
+        # Nota: juros já estão embutidos no valor de face (por isso o deságio)
+        
+        # 7. TIR BRUTA (sem considerar PDD)
+        if recebimento_final > 0 and desembolso_liquido > 0:
+            irr_d_bruto = (recebimento_final / desembolso_liquido) ** (1 / prazo_dias) - 1
+            irr_m_bruto = (1 + irr_d_bruto) ** 30 - 1
+            irr_a_bruto = (1 + irr_d_bruto) ** 365 - 1
+            retorno_periodo_bruto = (recebimento_final / desembolso_liquido) - 1
+            irr_valid = True
+        else:
+            irr_d_bruto = irr_m_bruto = irr_a_bruto = retorno_periodo_bruto = np.nan
+            irr_valid = False
+        
+        # 8. TIR LÍQUIDA: PDD reduz a taxa (não o valor)
+        # Fórmula: TIR Líquida = TIR Bruta × (1 - PDD%)
+        if irr_valid:
+            irr_m_liquido = irr_m_bruto * (1 - prob_pdd)
+            irr_a_liquido = (1 + irr_m_liquido) ** 12 - 1
+            retorno_periodo_liquido = retorno_periodo_bruto * (1 - prob_pdd)
+            irr_liq_valid = True
+        else:
+            irr_m_liquido = irr_a_liquido = retorno_periodo_liquido = np.nan
+            irr_liq_valid = False
+        
+        # 9. RECEITAS E LUCROS
+        receita_total_bruta = recebimento_final - desembolso_liquido
+        
+        # PDD esperada (apenas para informação, não afeta fluxo de caixa)
+        pdd_esperada_valor = receita_total_bruta * prob_pdd
+        receita_total_liquida = receita_total_bruta - pdd_esperada_valor
+        
+        # 10. IMPACTO DA TAC NA TIR
+        # Calcular TIR sem TAC para comparação
+        desembolso_sem_tac = preco_compra
+        if recebimento_final > 0 and desembolso_sem_tac > 0:
+            irr_d_sem_tac = (recebimento_final / desembolso_sem_tac) ** (1 / prazo_dias) - 1
+            irr_m_sem_tac = (1 + irr_d_sem_tac) ** 30 - 1
+            irr_m_sem_tac_liq = irr_m_sem_tac * (1 - prob_pdd)
+            impacto_tac = (irr_m_bruto - irr_m_sem_tac) * 100  # em p.p.
+        else:
+            irr_m_sem_tac_liq = np.nan
+            impacto_tac = 0
+        
+        # ========== SEÇÃO 2: RESULTADOS PRINCIPAIS ==========
+        st.markdown("---")
+        st.markdown('<div class="section-header">📊 Resultados da Simulação</div>', unsafe_allow_html=True)
+        
+        col_r1, col_r2, col_r3, col_r4, col_r5 = st.columns(5)
+        
+        col_r1.metric(
+            "Deságio Calculado",
+            f"{desagio_pct:.2f}%",
+            delta=format_brl(desagio_valor),
+            delta_color="off",
+            help="Calculado pela taxa de juros"
+        )
+        
+        col_r2.metric(
+            "Desembolso Líquido",
+            format_brl(desembolso_liquido),
+            delta=f"TAC: {format_brl(tac_val)}",
+            delta_color="inverse",
+            help="O que o cliente efetivamente recebe"
+        )
+        
+        col_r3.metric(
+            "TIR Mensal Bruta",
+            f"{irr_m_bruto*100:.2f}%" if irr_valid else "N/A",
+            help="Sem considerar PDD"
+        )
+        
+        col_r4.metric(
+            "TIR Mensal Líquida",
+            f"{irr_m_liquido*100:.2f}%" if irr_liq_valid else "N/A",
+            delta=f"-{(irr_m_bruto - irr_m_liquido)*100:.2f} p.p." if irr_liq_valid else "",
+            delta_color="inverse",
+            help="Após aplicar PDD como redutor"
+        )
+        
+        col_r5.metric(
+            "TIR Anual Líquida",
+            f"{irr_a_liquido*100:.2f}%" if irr_liq_valid else "N/A",
+            help="Taxa anualizada (12 meses)"
+        )
+        
+        # Métricas adicionais
+        st.markdown("---")
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        
+        col_m1.metric(
+            "Retorno do Período",
+            f"{retorno_periodo_liquido*100:.2f}%" if irr_valid else "N/A",
+            help=f"Retorno total em {prazo_dias} dias"
+        )
+        
+        col_m2.metric(
+            "Impacto da TAC",
+            f"+{impacto_tac:.2f} p.p." if impacto_tac > 0 else f"{impacto_tac:.2f} p.p.",
+            delta=f"TIR sem TAC: {irr_m_sem_tac_liq*100:.2f}%" if not np.isnan(irr_m_sem_tac_liq) else "",
+            delta_color="off",
+            help="Quanto a TAC aumenta a TIR"
+        )
+        
+        col_m3.metric(
+            "Receita Total Bruta",
+            format_brl(receita_total_bruta),
+            help="Sem considerar PDD"
+        )
+        
+        col_m4.metric(
+            "Receita Líquida (c/ PDD)",
+            format_brl(receita_total_liquida),
+            delta=f"PDD: {format_brl(pdd_esperada_valor)}",
+            delta_color="inverse",
+            help="Após provisão para PDD"
+        )
+        
+        # ========== SEÇÃO 4: COMPOSIÇÃO DAS RECEITAS (PIZZA) ==========
+        st.markdown("---")
+        st.markdown('<div class="section-header">🥧 Composição das Receitas</div>', unsafe_allow_html=True)
 
-        # Fluxos: saída inicial + entrada única no vencimento (principal + juros + penalidades)
-        cfs = [-preco_compra + tac_val]
-        recebimento_final = ticket + juros_total + penalidade
-        cfs.append(recebimento_final)
+        col_p1, col_p2 = st.columns([1.5, 1])
 
-        def calc_irr(vals):
-            arr = np.array(vals, dtype=float)
-            # precisa de pelo menos um fluxo positivo e um negativo
-            if not (np.any(arr > 0) and np.any(arr < 0)):
-                return np.nan
-            # 1) Tenta numpy_financial, se existir
-            try:
-                import numpy_financial as npf  # type: ignore
-                return float(npf.irr(arr))
-            except Exception:
-                pass
-            # 2) Tenta np.irr (deprecated/ausente em numpy>=2)
-            irr_attr = getattr(np, "irr", None)
-            if irr_attr is not None:
-                try:
-                    return float(irr_attr(arr))
-                except Exception:
-                    pass
-            # 3) Newton-Raphson simples como fallback
-            r = 0.1
-            for _ in range(100):
-                denom = (1 + r) ** np.arange(len(arr))
-                f = np.sum(arr / denom)
-                df = np.sum(-np.arange(len(arr)) * arr / ((1 + r) ** (np.arange(len(arr)) + 1)))
-                if df == 0:
-                    break
-                r_new = r - f / df
-                if not np.isfinite(r_new):
-                    break
-                if abs(r_new - r) < 1e-8:
-                    return r_new
-                r = r_new
-            return np.nan
+        with col_p1:
+            # Componentes de receita
+            receitas_componentes = {
+                'Deságio': desagio_valor,
+                'TAC': tac_val,
+                'Mora': mora_val,
+                'Multa': multa_val
+            }
+            
+            # Filtrar componentes com valor > 0
+            receitas_filtradas = {k: v for k, v in receitas_componentes.items() if v > 0}
+            
+            if receitas_filtradas:
+                fig_pizza = go.Figure(data=[go.Pie(
+                    labels=list(receitas_filtradas.keys()),
+                    values=list(receitas_filtradas.values()),
+                    hole=0.4,
+                    marker=dict(colors=['#2ecc71', '#f39c12', '#9b59b6', '#e74c3c']),
+                    textinfo='label+percent',
+                    textposition='outside',
+                    hovertemplate='''<b>%{label}</b>  
+                    Valor: %{value:,.2f}  
+                    %{percent}<extra></extra>'''
+                )])
+                
+                total_receitas = sum(receitas_filtradas.values())
+                
+                fig_pizza.update_layout(
+                    title={
+                        'text': f'Total de Receitas: {format_brl(total_receitas)}',
+                        'x': 0.5,
+                        'xanchor': 'center',
+                        'font': {'size': 16}
+                    },
+                    height=500,  # ← AUMENTADO
+                    showlegend=True,
+                    legend=dict(orientation="v", yanchor="middle", y=0.5)
+                )
+                
+                st.plotly_chart(fig_pizza, use_container_width=True)
+            else:
+                st.info("Sem componentes de receita para exibir")
 
-        # TIR bruta: extrai taxa diária dos dois fluxos e converte para mês (30d) e ano (365d)
-        irr_d = np.nan
-        if recebimento_final > 0 and (-cfs[0]) > 0:
-            irr_d = (recebimento_final / (-cfs[0])) ** (1 / prazo_dias) - 1
-        irr_valid = irr_d is not None and not np.isnan(irr_d)
-        irr_m = (1 + irr_d) ** 30 - 1 if irr_valid else np.nan
-        irr_a = (1 + irr_d) ** 365 - 1 if irr_valid else np.nan
+        with col_p2:
+            st.markdown("**📊 Detalhamento Percentual:**")
+            
+            total_receitas = sum(receitas_componentes.values())
+            
+            if total_receitas > 0:
+                for componente, valor in receitas_componentes.items():
+                    if valor > 0:
+                        pct_total = (valor / total_receitas * 100)
+                        pct_invest = (valor / desembolso_liquido * 100)
+                        
+                        st.markdown(f"**{componente}:**")
+                        st.caption(f"{format_brl(valor)} ({pct_total:.1f}% do total | {pct_invest:.2f}% do investimento)")
+                
+                # ← REMOVIDO: Cards de Total de Receitas e Margem Bruta
+            else:
+                st.info("Sem receitas para exibir")
 
-        # TIR líquida: aplica PDD como redutor percentual da TIR (LGD)
-        pdd_esperada = ticket * prob_pdd
-        irr_m_liq = irr_m * (1 - prob_pdd) if irr_valid else np.nan
-        irr_liq_valid = irr_m_liq is not None and not np.isnan(irr_m_liq)
-        irr_a_liq = (1 + irr_m_liq) ** 12 - 1 if irr_liq_valid else np.nan
-        retorno_periodo = (recebimento_final / (-cfs[0])) - 1 if irr_valid else np.nan
-        retorno_periodo_liq = retorno_periodo * (1 - prob_pdd) if irr_valid else np.nan
+        
+        # ========== SEÇÃO 5: COMPARAÇÃO DE CENÁRIOS DE PAGAMENTO ==========
+        st.markdown("---")
+        st.markdown('<div class="section-header">🎯 Comparação de Cenários de Pagamento</div>', unsafe_allow_html=True)
+        
+        st.caption("Análise de diferentes situações de pagamento e seu impacto na rentabilidade")
+        
+        # Definir cenários
+        cenarios_pagamento = [
+            {
+                'nome': '✅ Pagamento no Prazo',
+                'dias_atraso': 0,
+                'prob_pdd': 0.0,
+                'descricao': 'Cliente paga no vencimento'
+            },
+            {
+                'nome': '⏰ Atraso de 1 dia',
+                'dias_atraso': 1,
+                'descricao': 'Atraso mínimo'
+            },
+            {
+                'nome': '⏰ Atraso de 5 dias',
+                'dias_atraso': 5,
+                'descricao': 'Atraso pontual'
+            },
+            {
+                'nome': '⏰ Atraso de 10 dias',
+                'dias_atraso': 10,
+                'descricao': 'Atraso moderado'
+            },
 
-        col_k1, col_k2, col_k3, col_k4, col_k5 = st.columns(5)
-        col_k1.metric("Retorno do período (bruto)", f"{retorno_periodo*100:.2f}%" if irr_valid else "N/A")
-        col_k2.metric("Retorno do período (líquido PDD)", f"{retorno_periodo_liq*100:.2f}%" if irr_liq_valid else "N/A")
-        col_k3.metric("TIR mensal (bruta)", f"{irr_m*100:.2f}%" if irr_valid else "N/A")
-        col_k4.metric("TIR mensal líquida (após PDD)", f"{irr_m_liq*100:.2f}%" if irr_liq_valid else "N/A")
-        col_k5.metric("TIR anualizada líquida", f"{irr_a_liq*100:.2f}%" if irr_liq_valid else "N/A")
+            {
+                'nome': '⏰ Atraso de 30 dias',
+                'dias_atraso': 30,
+                'descricao': 'Atraso preocupante'
+            },
 
-        # Pequena visão dos fluxos e total a receber
-        total_inflow = recebimento_final + tac_val
-        st.markdown("##### Resumo dos fluxos")
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            st.metric("Total a receber (R$)", format_brl(total_inflow))
-            st.metric("Receita de juros total (R$)", format_brl(juros_total))
-        with col_f2:
-            st.metric("Penalidades esperadas (R$)", format_brl(penalidade))
-            st.metric("TAC (R$)", format_brl(tac_val))
-            st.metric("PDD esperada (R$)", format_brl(pdd_esperada))
+            {
+                'nome': '⏰ Atraso de 60 dias',
+                'dias_atraso': 60,
+                'prob_pdd': prob_pdd * 0.3,
+                'descricao': 'Atraso com provisão de PDD'
+            },
+        ]
+        
+        resultados_cenarios = []
 
-        with st.expander("Hipóteses do simulador"):
+        for cen in cenarios_pagamento:
+            # Recalcular penalidades
+            mora_val_cen = ticket * mora_dia * cen['dias_atraso']
+            multa_val_cen = ticket * multa_pct if cen['dias_atraso'] > 0 else 0
+            penalidade_cen = multa_val_cen + mora_val_cen
+            
+            recebimento_cen = ticket + penalidade_cen
+            
+            # Pegar PDD do cenário (0.0 se não definido)
+            pdd_cenario = cen.get('prob_pdd', 0.0)
+            
+            # Calcular TIR
+            if recebimento_cen > 0 and desembolso_liquido > 0:
+                irr_d_cen = (recebimento_cen / desembolso_liquido) ** (1 / prazo_dias) - 1
+                irr_m_cen = (1 + irr_d_cen) ** 30 - 1
+                irr_m_liq_cen = irr_m_cen * (1 - pdd_cenario)
+                irr_a_liq_cen = (1 + irr_m_liq_cen) ** 12 - 1
+                
+                receita_bruta_cen = recebimento_cen - desembolso_liquido
+                pdd_esperada_cen = receita_bruta_cen * pdd_cenario
+                receita_liq_cen = receita_bruta_cen - pdd_esperada_cen
+            else:
+                irr_m_liq_cen = irr_a_liq_cen = 0
+                penalidade_cen = pdd_esperada_cen = receita_liq_cen = 0
+            
+            resultados_cenarios.append({
+                'Cenário': cen['nome'],
+                'Descrição': cen['descricao'],
+                'TIR Mensal (%)': f"{irr_m_liq_cen*100:.2f}",
+                'TIR Anual (%)': f"{irr_a_liq_cen*100:.2f}",
+                'Penalidades (R$)': format_brl(penalidade_cen),
+                'PDD Esperada (R$)': format_brl(pdd_esperada_cen),
+                'Receita Líquida (R$)': format_brl(receita_liq_cen)
+            })
+
+        # Criar DataFrame
+        df_cenarios = pd.DataFrame(resultados_cenarios)
+
+        # Exibir tabela
+        st.dataframe(
+            df_cenarios,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Cenário": st.column_config.TextColumn("Cenário", width="medium"),
+                "Descrição": st.column_config.TextColumn("Descrição", width="medium"),
+                "TIR Mensal (%)": st.column_config.TextColumn("TIR Mensal (%)", width="small"),
+                "TIR Anual (%)": st.column_config.TextColumn("TIR Anual (%)", width="small"),
+                "Penalidades (R$)": st.column_config.TextColumn("Penalidades", width="medium"),
+                "PDD Esperada (R$)": st.column_config.TextColumn("PDD Esperada", width="medium"),
+                "Receita Líquida (R$)": st.column_config.TextColumn("Receita Líquida", width="medium")
+            }
+        )
+
+        
+            
+        # ========== SEÇÃO 6: HIPÓTESES E OBSERVAÇÕES ==========
+        with st.expander("📖 Hipóteses e Metodologia do Simulador"):
             st.markdown(
                 """
-                - Operação bullet simples: juros mensais sobre o saldo total, principal no vencimento.
-                - TAC recebida upfront, somada ao fluxo inicial.
-                - PDD é apenas informativa para penalidades; não reduz a base de juros nem o principal performing.
-                - Mora e multa são percentuais mensais aplicados sobre a fração inadimplente.
-                - Ajuste os campos para refletir políticas específicas (ex.: parcelas iguais, amortizações, outros encargos).
+                ### Premissas do Modelo:
+                
+                **Estrutura da Operação:**
+                - Operação **bullet** (pagamento único no vencimento)
+                - Cliente recebe: `Valor de Face - Deságio - TAC`
+                - Cliente paga no vencimento: `Valor de Face` (+ penalidades se atrasar)
+                
+                **Deságio (Calculado pela Taxa):**
+                - Fórmula: `Deságio = Valor de Face × (1 - 1/(1+taxa)^períodos)`
+                - Representa o ganho financeiro do FIDC pela antecipação
+                - Quanto maior a taxa, maior o deságio
+                
+                **TAC (Taxa de Abertura de Crédito):**
+                - Descontada do desembolso (cliente recebe menos)
+                - Aumenta a TIR do FIDC sem aumentar o risco
+                - Analisada separadamente para avaliar seu impacto
+                
+                **Penalidades (Mora e Multa):**
+                - **Multa**: 2% flat sobre o valor de face (aplicada uma vez)
+                - **Mora**: 1% a.m. sobre o valor de face × (dias de atraso / 30)
+                - Aplicadas apenas em caso de atraso
+                - Aumentam o retorno mas indicam risco maior
+                
+                **PDD (Provisão para Devedores Duvidosos):**
+                - Atua como **redutor da taxa efetiva**, NÃO como perda de principal
+                - Fórmula: `TIR Líquida = TIR Bruta × (1 - PDD%)`
+                - Exemplo: TIR Bruta 5% a.m. com PDD 10% → TIR Líquida = 4,5% a.m.
+                - Reflete a expectativa de perda na carteira
+                
+                **Cálculo da TIR:**
+                - **TIR Bruta**: Baseada apenas nos fluxos de caixa (desembolso vs recebimento)
+                - **TIR Líquida**: Aplica o fator de redução do PDD
+                - Conversões: Diária → Mensal (30 dias) → Anual (12 meses)
+                
+                ### Observações Importantes:
+                
+                - O modelo assume que a operação é **performing** até o vencimento
+                - PDD é tratada como **expectativa de perda**, não perda realizada
+                - Mora e multa são aplicadas sobre o **valor de face total**
+                - Quanto maior o atraso, maior a penalidade mas também maior o risco (PDD)
+                - TAC é uma receita imediata que melhora a TIR sem aumentar exposição
+                - Ajuste os parâmetros conforme políticas específicas do FIDC
+                
+                ### Interpretação dos Cenários:
+                
+                - **Pagamento no Prazo**: Cenário ideal, sem risco adicional
+                - **Atrasos**: Maior retorno mas maior risco (PDD parcial)
+                - **Default**: Perda total da rentabilidade (PDD 100%)
                 """
             )
     
@@ -1400,226 +1740,484 @@ with tab_alvo:
         )
     
     # ============================================================
-    # SUB-ABA 2: SIMULADOR DE CENÁRIOS MÚLTIPLOS
+    # SUB-ABA 2: SIMULADOR COMPLETO DO FUNDO (CORRIGIDO)
     # ============================================================
     with subtab2:
-        st.markdown("### Simulador de Cenários Múltiplos")
-        st.caption("Compare diferentes combinações de parâmetros e veja o impacto no resultado do fundo")
+        st.markdown("### 🎛️ Simulador Completo do Fundo")
+        st.caption("Ajuste qualquer variável do fundo e veja o impacto em tempo real na rentabilidade da Cota Júnior")
         
-        st.markdown("**Configure até 3 cenários para comparação:**")
+        # --- DEFINE VARIÁVEL DE BASE ---
+        pct_caixa_aplicado_atual = 1.0 # Assume 100% aplicado no cenário atual
         
-        # Criar 3 colunas para 3 cenários
-        col_c1, col_c2, col_c3 = st.columns(3)
+        # ========== SEÇÃO 1: PAINEL DE CONTROLE ==========
+        st.markdown('<div class="section-header">⚙️ Painel de Controle - Ajuste as Variáveis</div>', unsafe_allow_html=True)
         
-        cenarios = []
+        # Organizar em 3 colunas
+        col_sim1, col_sim2, col_sim3 = st.columns(3)
         
-        for idx, col in enumerate([col_c1, col_c2, col_c3], 1):
-            with col:
-                st.markdown(f"**Cenário {idx}**")
-                
-                if idx == 1:
-                    # Cenário 1 = Base (valores atuais)
-                    nome_cenario = st.text_input(f"Nome do cenário {idx}", value="Base (Atual)", key=f"nome_{idx}")
-                    taxa_c = taxa_carteira_am_pct
-                    pdd_mult_c = 1.0
-                    spread_s_c = spread_senior_aa_pct
-                    spread_m_c = spread_mezz_aa_pct
-                    
-                    st.metric("Taxa Carteira", f"{taxa_c:.2f}% a.m.")
-                    st.metric("PDD Multiplicador", f"{pdd_mult_c:.1f}x")
-                    st.metric("Spread Sênior", f"{spread_s_c:.2f}% a.a.")
-                    st.metric("Spread Mezz", f"{spread_m_c:.2f}% a.a.")
-                else:
-                    nome_cenario = st.text_input(f"Nome do cenário {idx}", value=f"Cenário {idx}", key=f"nome_{idx}")
-                    
-                    taxa_c = st.number_input(
-                        f"Taxa Carteira (% a.m.)",
-                        min_value=0.0,
-                        max_value=10.0,
-                        value=taxa_carteira_am_pct,
-                        step=0.1,
-                        format="%.2f",
-                        key=f"taxa_{idx}"
-                    )
-                    
-                    pdd_mult_c = st.number_input(
-                        f"Multiplicador PDD",
-                        min_value=0.0,
-                        max_value=5.0,
-                        value=1.0,
-                        step=0.1,
-                        format="%.1f",
-                        key=f"pdd_{idx}"
-                    )
-                    
-                    spread_s_c = st.number_input(
-                        f"Spread Sênior (% a.a.)",
-                        min_value=0.0,
-                        max_value=10.0,
-                        value=spread_senior_aa_pct,
-                        step=0.25,
-                        format="%.2f",
-                        key=f"spread_s_{idx}"
-                    )
-                    
-                    spread_m_c = st.number_input(
-                        f"Spread Mezz (% a.a.)",
-                        min_value=0.0,
-                        max_value=10.0,
-                        value=spread_mezz_aa_pct,
-                        step=0.25,
-                        format="%.2f",
-                        key=f"spread_m_{idx}"
-                    )
-                
-                cenarios.append({
-                    'nome': nome_cenario,
-                    'taxa_carteira_am': taxa_c / 100,
-                    'pdd_mult': pdd_mult_c,
-                    'spread_senior_aa': spread_s_c / 100,
-                    'spread_mezz_aa': spread_m_c / 100
-                })
+        pct_caixa = 1 - pct_recebiveis
+        valor_caixa = pl_total * pct_caixa
+
+        with col_sim1:
+            st.markdown("**💰 Receitas:**")
+            
+            taxa_cart_sim = st.number_input(
+                "Taxa da Carteira (% a.m.)",
+                min_value=0.0,
+                max_value=10.0,
+                value=float(taxa_carteira_am_pct),
+                step=0.1,
+                format="%.2f",
+                key="sim_taxa_cart",
+                help="Taxa de juros dos recebíveis"
+            ) / 100
+            
+            pct_caixa_aplicado_sim = st.slider(
+                "% do Caixa Aplicado",
+                min_value=0.0,
+                max_value=100.0,
+                value=100.0,
+                step=5.0,
+                format="%.0f%%",
+                key="sim_pct_caixa",
+                help="Percentual do caixa aplicado em CDI"
+            ) / 100
+            
+            taxa_caixa_aa_sim = st.number_input(
+                "Taxa do Caixa (% a.a.)",
+                min_value=0.0,
+                max_value=20.0,
+                value=float(cdi_aa * 100),
+                step=0.5,
+                format="%.2f",
+                key="sim_taxa_caixa"
+            ) / 100
         
-        # Calcular resultados para cada cenário
+        with col_sim2:
+            st.markdown("**💸 Custos das Cotas:**")
+            
+            spread_senior_sim = st.number_input(
+                "Spread Sênior (% a.a.)",
+                min_value=0.0,
+                max_value=10.0,
+                value=float(spread_senior_aa_pct),
+                step=0.25,
+                format="%.2f",
+                key="sim_spread_senior",
+                help="Spread sobre CDI para cota sênior"
+            ) / 100
+            
+            spread_mezz_sim = st.number_input(
+                "Spread Mezzanino (% a.a.)",
+                min_value=0.0,
+                max_value=10.0,
+                value=float(spread_mezz_aa_pct),
+                step=0.25,
+                format="%.2f",
+                key="sim_spread_mezz",
+                help="Spread sobre CDI para cota mezzanino"
+            ) / 100
+            
+            taxa_adm_aa_sim = st.number_input(
+                "Taxa de Administração (% a.a.)",
+                min_value=0.0,
+                max_value=5.0,
+                value=float(taxa_adm_aa_pct),
+                step=0.1,
+                format="%.2f",
+                key="sim_taxa_adm"
+            ) / 100
+            
+            taxa_gestao_aa_sim = st.number_input(
+                "Taxa de Gestão (% a.a.)",
+                min_value=0.0,
+                max_value=5.0,
+                value=float(taxa_gestao_aa_pct),
+                step=0.1,
+                format="%.2f",
+                key="sim_taxa_gestao"
+            ) / 100
+        
+        with col_sim3:
+            st.markdown("**⚠️ Riscos:**")
+            
+            pdd_mult_sim = st.slider(
+                "Multiplicador de PDD",
+                min_value=0.0,
+                max_value=5.0,
+                value=1.0,
+                step=0.1,
+                format="%.1f",
+                key="sim_pdd_mult",
+                help="1.0 = PDD atual | 2.0 = dobro do PDD"
+            )
+            
+            st.markdown("**📊 Estrutura de Capital:**")
+            st.caption(f"Sênior: {format_brl(valor_senior)} ({(valor_senior/pl_total*100):.1f}%)")
+            st.caption(f"Mezzanino: {format_brl(valor_mezz)} ({(valor_mezz/pl_total*100):.1f}%)")
+            st.caption(f"Júnior: {format_brl(valor_junior)} ({(valor_junior/pl_total*100):.1f}%)")
+            st.caption(f"PL Total: {format_brl(pl_total)}")
+        
+        # ========== CÁLCULOS DO CENÁRIO SIMULADO (CORRIGIDOS) ==========
+        
+        # Receitas
+        # Aplica % de caixa aplicado sobre o valor do caixa
+        valor_caixa_aplicado_sim = valor_caixa * pct_caixa_aplicado_sim
+        
+        taxa_cart_diaria_sim = mensal_to_diario(taxa_cart_sim)
+        taxa_caixa_diaria_sim = anual_to_diario(taxa_caixa_aa_sim)
+        
+        receita_cart_sim = valor_recebiveis * taxa_cart_diaria_sim
+        # CORREÇÃO: Receita caixa considera apenas a parte aplicada
+        receita_caixa_sim = valor_caixa_aplicado_sim * taxa_caixa_diaria_sim
+        receita_total_sim = receita_cart_sim + receita_caixa_sim + receita_outros_dia
+        
+        # Custos
+        taxa_senior_aa_sim = cdi_aa + spread_senior_sim
+        taxa_mezz_aa_sim = cdi_aa + spread_mezz_sim
+        
+        taxa_senior_diaria_sim = anual_to_diario(taxa_senior_aa_sim)
+        taxa_mezz_diaria_sim = anual_to_diario(taxa_mezz_aa_sim)
+        
+        custo_senior_sim = valor_senior * taxa_senior_diaria_sim
+        custo_mezz_sim = valor_mezz * taxa_mezz_diaria_sim
+        
+        custo_adm_sim = pl_total * anual_to_diario(taxa_adm_aa_sim)
+        custo_gestao_sim = pl_total * anual_to_diario(taxa_gestao_aa_sim)
+        
+        pdd_sim = pdd_dia * pdd_mult_sim
+        
+        # Resultado Líquido Diário
+        resultado_liquido_sim = (
+            receita_total_sim
+            - custo_senior_sim
+            - custo_mezz_sim
+            - custo_adm_sim
+            - custo_gestao_sim
+            - pdd_sim
+            - custo_outros_dia
+        )
+        
+        resultado_junior_sim = resultado_liquido_sim
+        ret_diario_junior_sim = resultado_junior_sim / valor_junior if valor_junior > 0 else 0
+        
+        # CORREÇÃO MATEMÁTICA: Usar Juros Simples (* 252) para consistência
+        # Se usarmos exponencial aqui e linear lá em cima, dá diferença.
+        # Vamos padronizar com a lógica que você usa no Waterfall (Linear para visualização rápida).
+        retorno_anualizado_junior_sim = ret_diario_junior_sim * 252 
+        retorno_mensal_junior_sim = ret_diario_junior_sim * 21
+        
+        # ========== SEÇÃO 2: RESULTADOS DA SIMULAÇÃO ==========
         st.markdown("---")
-        st.markdown("**📊 Comparação de Resultados:**")
+        st.markdown('<div class="section-header">📊 Resultados da Simulação</div>', unsafe_allow_html=True)
         
-        resultados_cenarios = []
+        col_r1, col_r2, col_r3, col_r4, col_r5 = st.columns(5)
         
-        for cen in cenarios:
-            # Recalcular com parâmetros do cenário
-            taxa_cart_diaria_c = mensal_to_diario(cen['taxa_carteira_am'])
-            receita_cart_c = valor_recebiveis * taxa_cart_diaria_c
-            receita_total_c = receita_cart_c + receita_caixa_dia + receita_outros_dia
+        # Calcular variações
+        delta_receita = receita_total_sim - receita_total_dia
+        delta_custo_total_sim = (custo_senior_sim + custo_mezz_sim + custo_adm_sim + custo_gestao_sim + pdd_sim + custo_outros_dia)
+        delta_custo_total_atual = (custo_senior_dia + custo_mezz_dia + custo_adm_dia + custo_gestao_dia + pdd_dia + custo_outros_dia)
+        delta_custo = delta_custo_total_sim - delta_custo_total_atual
+        delta_resultado = resultado_junior_sim - resultado_junior_dia
+        
+        # Delta do retorno (p.p.)
+        delta_ret_anual = (retorno_anualizado_junior_sim - retorno_anualizado_junior) * 100
+        
+        col_r1.metric("Receita Total (dia)", format_brl(receita_total_sim), delta=format_brl(delta_receita), delta_color="normal")
+        col_r2.metric("Custos Totais (dia)", format_brl(delta_custo_total_sim), delta=format_brl(delta_custo), delta_color="inverse")
+        col_r3.metric("Resultado Júnior (dia)", format_brl(resultado_junior_sim), delta=format_brl(delta_resultado), delta_color="normal")
+        col_r4.metric("Retorno Júnior (% a.m.)", f"{retorno_mensal_junior_sim*100:.2f}%", delta=f"{(retorno_mensal_junior_sim - retorno_mensal_junior)*100:.2f} p.p.", delta_color="normal")
+        col_r5.metric("Retorno Júnior (% a.a.)", f"{retorno_anualizado_junior_sim*100:.2f}%", delta=f"{delta_ret_anual:.2f} p.p.", delta_color="normal")
+        
+        # ========== SEÇÃO 3: COMPARAÇÃO CENÁRIO ATUAL VS SIMULADO ==========
+        st.markdown("---")
+        st.markdown('<div class="section-header">📊 Comparação: Atual vs Simulado</div>', unsafe_allow_html=True)
+        
+        # Criar DataFrame comparativo
+        df_comparacao = pd.DataFrame({
+            'Métrica': [
+                'Taxa da Carteira (% a.m.)', '% Caixa Aplicado', 'Spread Sênior (% a.a.)', 'Spread Mezzanino (% a.a.)', 'Multiplicador PDD',
+                'Receita Total (dia)', 'Custo Sênior (dia)', 'Custo Mezzanino (dia)', 'PDD (dia)', 'Resultado Júnior (dia)', 'Retorno Júnior (% a.a.)'
+            ],
+            'Cenário Atual': [
+                f"{taxa_carteira_am_pct:.2f}%", f"{pct_caixa_aplicado_atual*100:.0f}%", f"{spread_senior_aa_pct:.2f}%", f"{spread_mezz_aa_pct:.2f}%", "1.0x",
+                format_brl(receita_total_dia), format_brl(custo_senior_dia), format_brl(custo_mezz_dia), format_brl(pdd_dia), format_brl(resultado_junior_dia), f"{retorno_anualizado_junior*100:.2f}%"
+            ],
+            'Cenário Simulado': [
+                f"{taxa_cart_sim*100:.2f}%", f"{pct_caixa_aplicado_sim*100:.0f}%", f"{spread_senior_sim*100:.2f}%", f"{spread_mezz_sim*100:.2f}%", f"{pdd_mult_sim:.1f}x",
+                format_brl(receita_total_sim), format_brl(custo_senior_sim), format_brl(custo_mezz_sim), format_brl(pdd_sim), format_brl(resultado_junior_sim), f"{retorno_anualizado_junior_sim*100:.2f}%"
+            ],
+            'Variação': [
+                f"{(taxa_cart_sim - taxa_carteira_am_pct/100)*100:.2f} p.p.", f"{(pct_caixa_aplicado_sim - pct_caixa_aplicado_atual)*100:.0f} p.p.",
+                f"{(spread_senior_sim - spread_senior_aa_pct/100)*100:.2f} p.p.", f"{(spread_mezz_sim - spread_mezz_aa_pct/100)*100:.2f} p.p.", f"{pdd_mult_sim - 1.0:+.1f}x",
+                format_brl(delta_receita), format_brl(custo_senior_sim - custo_senior_dia), format_brl(custo_mezz_sim - custo_mezz_dia),
+                format_brl(pdd_sim - pdd_dia), format_brl(delta_resultado), f"{delta_ret_anual:+.2f} p.p."
+            ]
+        })
+        
+        st.dataframe(
+            df_comparacao,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Métrica": st.column_config.TextColumn("Métrica", width="medium"),
+                "Cenário Atual": st.column_config.TextColumn("Cenário Atual", width="medium"),
+                "Cenário Simulado": st.column_config.TextColumn("Cenário Simulado", width="medium"),
+                "Variação": st.column_config.TextColumn("Variação", width="small")
+            }
+        )
+        
+        # ========== SEÇÃO 4: ANÁLISE DE SENSIBILIDADE - TAXA DA CARTEIRA ==========
+        st.markdown("---")
+        st.markdown('<div class="section-header">📈 Análise de Sensibilidade: Taxa da Carteira</div>', unsafe_allow_html=True)
+        
+        st.caption("Veja como variações na taxa da carteira impactam o retorno da Cota Júnior")
+        
+        # Gerar range de taxas
+        taxa_min = max(0, taxa_carteira_am_pct/100 - 0.02)  # -2 p.p.
+        taxa_max = taxa_carteira_am_pct/100 + 0.02  # +2 p.p.
+        taxas_range = np.linspace(taxa_min, taxa_max, 50)
+        
+        retornos_taxa = []
+        
+        for taxa_test in taxas_range:
+            taxa_diaria_test = mensal_to_diario(taxa_test)
+            receita_cart_test = valor_recebiveis * taxa_diaria_test
+            receita_total_test = receita_cart_test + receita_caixa_sim + receita_outros_dia
             
-            taxa_senior_aa_c = cdi_aa + cen['spread_senior_aa']
-            taxa_mezz_aa_c = cdi_aa + cen['spread_mezz_aa']
-            taxa_senior_diaria_c = anual_to_diario(taxa_senior_aa_c)
-            taxa_mezz_diaria_c = anual_to_diario(taxa_mezz_aa_c)
-            
-            custo_senior_c = valor_senior * taxa_senior_diaria_c
-            custo_mezz_c = valor_mezz * taxa_mezz_diaria_c
-            
-            pdd_c = pdd_dia * cen['pdd_mult']
-            
-            resultado_liquido_c = (
-                receita_total_c
-                - custo_senior_c
-                - custo_mezz_c
-                - custo_adm_dia
-                - custo_gestao_dia
-                - pdd_c
+            resultado_test = (
+                receita_total_test
+                - custo_senior_sim
+                - custo_mezz_sim
+                - custo_adm_sim
+                - custo_gestao_sim
+                - pdd_sim
                 - custo_outros_dia
             )
             
-            resultado_junior_c = resultado_liquido_c
-            ret_diario_junior_c = resultado_junior_c / valor_junior if valor_junior > 0 else 0
-            ret_anual_junior_c = (1 + ret_diario_junior_c) ** 252 - 1
+            ret_diario_test = resultado_test / valor_junior if valor_junior > 0 else 0
+            ret_anual_test = (1 + ret_diario_test) ** 252 - 1
             
-            resultados_cenarios.append({
-                'Cenário': cen['nome'],
-                'Receita Total (dia)': receita_total_c,
-                'Custo Sênior (dia)': custo_senior_c,
-                'Custo Mezz (dia)': custo_mezz_c,
-                'PDD (dia)': pdd_c,
-                'Resultado Júnior (dia)': resultado_junior_c,
-                'Retorno Júnior (% a.a.)': ret_anual_junior_c * 100,
-                'Resultado Anual Júnior': resultado_junior_c * 252
-            })
+            retornos_taxa.append(ret_anual_test * 100)
         
-        # Criar DataFrame
-        df_cenarios = pd.DataFrame(resultados_cenarios)
+        # Criar gráfico
+        fig_sens_taxa = go.Figure()
         
-        # Gráfico de barras comparativo
-        fig_comp = go.Figure()
-        
-        fig_comp.add_trace(go.Bar(
-            name='Receita Total',
-            x=df_cenarios['Cenário'],
-            y=df_cenarios['Receita Total (dia)'],
-            marker_color='#2ecc71'
+        fig_sens_taxa.add_trace(go.Scatter(
+            x=taxas_range * 100,
+            y=retornos_taxa,
+            mode='lines',
+            name='Retorno Júnior',
+            line=dict(color='#3498db', width=3),
+            hovertemplate='Taxa: %{x:.2f}% a.m.<br>Retorno: %{y:.2f}% a.a.<extra></extra>'
         ))
         
-        fig_comp.add_trace(go.Bar(
-            name='Custo Sênior',
-            x=df_cenarios['Cenário'],
-            y=df_cenarios['Custo Sênior (dia)'],
-            marker_color='#e74c3c'
+        # Marcar cenário simulado
+        fig_sens_taxa.add_trace(go.Scatter(
+            x=[taxa_cart_sim * 100],
+            y=[retorno_anualizado_junior_sim * 100],
+            mode='markers',
+            name='Cenário Simulado',
+            marker=dict(color='red', size=12, symbol='star'),
+            hovertemplate='<b>Cenário Simulado</b><br>Taxa: %{x:.2f}% a.m.<br>Retorno: %{y:.2f}% a.a.<extra></extra>'
         ))
         
-        fig_comp.add_trace(go.Bar(
-            name='Custo Mezz',
-            x=df_cenarios['Cenário'],
-            y=df_cenarios['Custo Mezz (dia)'],
-            marker_color='#f39c12'
-        ))
-        
-        fig_comp.add_trace(go.Bar(
-            name='PDD',
-            x=df_cenarios['Cenário'],
-            y=df_cenarios['PDD (dia)'],
-            marker_color='#95a5a6'
-        ))
-        
-        fig_comp.update_layout(
-            title={
-                'text': 'Comparação de Receitas e Custos por Cenário (Diário)',
-                'x': 0.5,
-                'xanchor': 'center'
-            },
-            barmode='group',
-            height=400,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
-        
-        st.plotly_chart(fig_comp, use_container_width=True)
-        
-        # Gráfico de retorno da Júnior
-        fig_ret = go.Figure()
-        
-        colors = ['#3498db' if i == 0 else '#95a5a6' for i in range(len(df_cenarios))]
-        
-        fig_ret.add_trace(go.Bar(
-            x=df_cenarios['Cenário'],
-            y=df_cenarios['Retorno Júnior (% a.a.)'],
-            marker_color=colors,
-            text=[f"{v:.2f}%" for v in df_cenarios['Retorno Júnior (% a.a.)']],
-            textposition='outside'
-        ))
-        
-        fig_ret.add_hline(
+        # Linha de break-even
+        fig_sens_taxa.add_hline(
             y=0,
             line_dash="dash",
             line_color="red",
-            annotation_text="Break-even"
+            annotation_text="Break-even (0%)",
+            annotation_position="right"
         )
         
-        fig_ret.update_layout(
+        fig_sens_taxa.update_layout(
             title={
-                'text': 'Retorno Anualizado da Cota Júnior por Cenário',
+                'text': 'Sensibilidade: Taxa da Carteira vs Retorno da Júnior',
                 'x': 0.5,
-                'xanchor': 'center'
+                'xanchor': 'center',
+                'font': {'size': 16}
             },
-            yaxis_title='Retorno (% a.a.)',
-            height=350,
-            showlegend=False
+            xaxis_title='Taxa da Carteira (% a.m.)',
+            yaxis_title='Retorno Júnior (% a.a.)',
+            height=400,
+            hovermode='x unified',
+            showlegend=True
         )
         
-        st.plotly_chart(fig_ret, use_container_width=True)
+        st.plotly_chart(fig_sens_taxa, use_container_width=True)
         
-        # Tabela detalhada
-        st.markdown("**📋 Tabela Detalhada:**")
+        # Métricas de sensibilidade
+        col_sens1, col_sens2, col_sens3 = st.columns(3)
         
-        df_display = df_cenarios.copy()
-        df_display['Receita Total (dia)'] = df_display['Receita Total (dia)'].apply(format_brl)
-        df_display['Custo Sênior (dia)'] = df_display['Custo Sênior (dia)'].apply(format_brl)
-        df_display['Custo Mezz (dia)'] = df_display['Custo Mezz (dia)'].apply(format_brl)
-        df_display['PDD (dia)'] = df_display['PDD (dia)'].apply(format_brl)
-        df_display['Resultado Júnior (dia)'] = df_display['Resultado Júnior (dia)'].apply(format_brl)
-        df_display['Resultado Anual Júnior'] = df_display['Resultado Anual Júnior'].apply(format_brl)
-        df_display['Retorno Júnior (% a.a.)'] = df_display['Retorno Júnior (% a.a.)'].apply(lambda x: f"{x:.2f}%")
+        # Calcular elasticidade (variação % retorno / variação % taxa)
+        if len(retornos_taxa) > 1:
+            delta_ret = retornos_taxa[-1] - retornos_taxa[0]
+            delta_taxa = (taxas_range[-1] - taxas_range[0]) * 100
+            elasticidade = delta_ret / delta_taxa if delta_taxa != 0 else 0
+        else:
+            elasticidade = 0
         
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        col_sens1.metric(
+            "Elasticidade",
+            f"{elasticidade:.2f}",
+            help="Variação do retorno (p.p.) para cada 1 p.p. de variação na taxa"
+        )
+        
+        col_sens2.metric(
+            "Retorno Mínimo",
+            f"{min(retornos_taxa):.2f}%",
+            help=f"Com taxa de {taxa_min*100:.2f}% a.m."
+        )
+        
+        col_sens3.metric(
+            "Retorno Máximo",
+            f"{max(retornos_taxa):.2f}%",
+            help=f"Com taxa de {taxa_max*100:.2f}% a.m."
+        )
+        
+        # ========== SEÇÃO 5: ANÁLISE DE SENSIBILIDADE - % CAIXA APLICADO ==========
+        st.markdown("---")
+        st.markdown('<div class="section-header">💰 Análise de Sensibilidade: % Caixa Aplicado</div>', unsafe_allow_html=True)
+        
+        st.caption("Veja como variações no percentual de caixa aplicado impactam o retorno da Cota Júnior")
+        
+        # Gerar range de % caixa
+        pct_caixa_range = np.linspace(0, 1, 50)
+        
+        retornos_caixa = []
+        
+        for pct_test in pct_caixa_range:
+            valor_caixa_aplicado_test = valor_caixa * pct_test
+            receita_caixa_test = valor_caixa_aplicado_test * taxa_caixa_diaria_sim
+            receita_total_test = receita_cart_sim + receita_caixa_test + receita_outros_dia
+            
+            resultado_test = (
+                receita_total_test
+                - custo_senior_sim
+                - custo_mezz_sim
+                - custo_adm_sim
+                - custo_gestao_sim
+                - pdd_sim
+                - custo_outros_dia
+            )
+            
+            ret_diario_test = resultado_test / valor_junior if valor_junior > 0 else 0
+            ret_anual_test = (1 + ret_diario_test) ** 252 - 1
+            
+            retornos_caixa.append(ret_anual_test * 100)
+        
+        # Criar gráfico
+        fig_sens_caixa = go.Figure()
+        
+        fig_sens_caixa.add_trace(go.Scatter(
+            x=pct_caixa_range * 100,
+            y=retornos_caixa,
+            mode='lines',
+            name='Retorno Júnior',
+            line=dict(color='#2ecc71', width=3),
+            hovertemplate='% Caixa: %{x:.0f}%<br>Retorno: %{y:.2f}% a.a.<extra></extra>'
+        ))
+        
+        # Marcar cenário simulado
+        fig_sens_caixa.add_trace(go.Scatter(
+            x=[pct_caixa_aplicado_sim * 100],
+            y=[retorno_anualizado_junior_sim * 100],
+            mode='markers',
+            name='Cenário Simulado',
+            marker=dict(color='red', size=12, symbol='star'),
+            hovertemplate='<b>Cenário Simulado</b><br>% Caixa: %{x:.0f}%<br>Retorno: %{y:.2f}% a.a.<extra></extra>'
+        ))
+        
+        # Linha de break-even
+        fig_sens_caixa.add_hline(
+            y=0,
+            line_dash="dash",
+            line_color="red",
+            annotation_text="Break-even (0%)",
+            annotation_position="right"
+        )
+        
+        fig_sens_caixa.update_layout(
+            title={
+                'text': 'Sensibilidade: % Caixa Aplicado vs Retorno da Júnior',
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 16}
+            },
+            xaxis_title='% do Caixa Aplicado',
+            yaxis_title='Retorno Júnior (% a.a.)',
+            height=400,
+            hovermode='x unified',
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig_sens_caixa, use_container_width=True)
+        
+        # Métricas de sensibilidade
+        col_sens_c1, col_sens_c2, col_sens_c3 = st.columns(3)
+        
+        # Calcular impacto de aplicar 100% vs 0%
+        impacto_total = retornos_caixa[-1] - retornos_caixa[0]
+        
+        col_sens_c1.metric(
+            "Impacto Total",
+            f"{impacto_total:.2f} p.p.",
+            help="Diferença entre aplicar 100% e 0% do caixa"
+        )
+        
+        col_sens_c2.metric(
+            "Retorno com 0% Aplicado",
+            f"{retornos_caixa[0]:.2f}%",
+            help="Retorno se não aplicar nada do caixa"
+        )
+        
+        col_sens_c3.metric(
+            "Retorno com 100% Aplicado",
+            f"{retornos_caixa[-1]:.2f}%",
+            help="Retorno se aplicar todo o caixa"
+        )
+        
+        # ========== INSIGHTS E RECOMENDAÇÕES ==========
+        st.markdown("---")
+        st.markdown('<div class="section-header">💡 Insights e Recomendações</div>', unsafe_allow_html=True)
+        
+        col_ins1, col_ins2 = st.columns(2)
+        
+        with col_ins1:
+            st.markdown("**🎯 Principais Alavancas de Rentabilidade:**")
+            
+            # Calcular impacto de cada variável
+            impactos = {
+                'Taxa da Carteira': abs(elasticidade),
+                '% Caixa Aplicado': abs(impacto_total / 100),
+                'Spread Sênior': abs((custo_senior_sim - custo_senior_dia) / resultado_junior_dia * 100) if resultado_junior_dia != 0 else 0,
+                'Spread Mezzanino': abs((custo_mezz_sim - custo_mezz_dia) / resultado_junior_dia * 100) if resultado_junior_dia != 0 else 0
+            }
+            
+            # Ordenar por impacto
+            impactos_ordenados = sorted(impactos.items(), key=lambda x: x[1], reverse=True)
+            
+            for i, (variavel, impacto) in enumerate(impactos_ordenados, 1):
+                st.caption(f"{i}. **{variavel}** - Impacto: {impacto:.2f}")
+        
+        with col_ins2:
+            st.markdown("**⚠️ Alertas:**")
+            
+            # Gerar alertas baseados na simulação
+            if retorno_anualizado_junior_sim < 0:
+                st.warning("⚠️ Retorno da Júnior negativo no cenário simulado")
+            
+            if pdd_mult_sim > 2.0:
+                st.warning("⚠️ PDD muito elevado (>2x) - risco alto")
+            
+            if pct_caixa_aplicado_sim < 0.5:
+                st.info("💡 Considere aumentar % de caixa aplicado para melhorar rentabilidade")
+            
+            if delta_ret_anual > 5:
+                st.success(f"✅ Melhoria de {delta_ret_anual:.2f} p.p. no retorno da Júnior!")
+            elif delta_ret_anual < -5:
+                st.error(f"❌ Piora de {abs(delta_ret_anual):.2f} p.p. no retorno da Júnior")
     
     # ============================================================
     # SUB-ABA 3: ANÁLISE DE BREAK-EVEN
