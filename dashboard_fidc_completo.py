@@ -1053,10 +1053,11 @@ with tab_alvo:
     pct_caixa_aplicado_atual = 1.0 
     
     # Criar as 4 sub-tabs conforme sua estrutura (Sem a aba de sensibilidade isolada)
-    subtab_sim_taxa, subtab_cenarios = st.tabs([
+    subtab_sim_taxa, subtab_cenarios, subtab_taxa_alvo = st.tabs([
         "🚀 Simulador de Taxa (Unitário)",
-        "🔥 Simulador de Cenários (Fundo)"
-        ])
+        "🔥 Simulador de Cenários (Fundo)",
+        "🎯 Taxa-Alvo do Fundo (Meta de Retorno)",
+    ])
     
     # ============================================================
     # SUB-ABA 0: SIMULADOR DE TAXA UNITÁRIO (SEU CÓDIGO ORIGINAL)
@@ -1389,6 +1390,146 @@ with tab_alvo:
         })
         st.dataframe(df_comp_sim, use_container_width=True, hide_index=True)
 
+    # ============================================================
+    # SUB-ABA 3: TAXA-ALVO DO FUNDO (NOVA FUNCIONALIDADE REVERSA)
+    # ============================================================
+    with subtab_taxa_alvo:
+        st.markdown("### 🎯 Calculadora de Taxa-Alvo (Engenharia Reversa)")
+        
+        # Layout
+        c_input, c_kpi = st.columns([1, 3])
+        
+        with c_input:
+            st.markdown("**Defina sua Meta:**")
+            target_roe_jr = st.number_input(
+                "ROE Alvo da Júnior (% a.a.)", 
+                min_value=-100.0, 
+                max_value=500.0, 
+                value=float(retorno_anualizado_junior*100), 
+                step=1.0,
+                help="Quanto você quer que a cota Júnior renda ao ano?"
+            )
+
+        # --- CÁLCULO REVERSO ---
+        # 1. Resultado Líquido Diário Necessário
+        res_dia_nec = (target_roe_jr / 100.0 * valor_junior) / 252.0
+        
+        # 2. Custos Totais (Fixos + Variáveis + PDD Atual)
+        custos_totais_dia = custo_senior_dia + custo_mezz_dia + custo_adm_dia + custo_gestao_dia + pdd_dia + custo_outros_dia
+        
+        # 3. Receita Total Necessária
+        rec_total_nec = res_dia_nec + custos_totais_dia
+        
+        # 4. Receita de Carteira Necessária (Total - Receitas Fixas)
+        rec_carteira_necessaria = rec_total_nec - receita_caixa_dia - receita_outros_dia
+        
+        # 5. Taxa Mensal Necessária
+        if valor_recebiveis > 0:
+            taxa_dia_nec = rec_carteira_necessaria / valor_recebiveis
+            # Evitar erro matemático se receita necessária for muito negativa
+            taxa_mes_nec = ((1 + taxa_dia_nec)**21 - 1) * 100
+        else:
+            taxa_mes_nec = 0.0
+            
+        delta_taxa = taxa_mes_nec - taxa_carteira_am_pct
+
+        with c_kpi:
+            k1, k2, k3 = st.columns(3)
+            
+            cor_delta = "inverse" if delta_taxa > 0 else "normal"
+            
+            k1.metric(
+                "Taxa Mínima na Carteira", 
+                f"{taxa_mes_nec:.4f}% a.m.",
+                delta=f"{delta_taxa:+.4f} p.p. vs Atual",
+                delta_color=cor_delta,
+                help="Taxa média mensal necessária nos recebíveis para bater a meta."
+            )
+            
+            k2.metric(
+                "Receita Diária Necessária",
+                format_brl(rec_carteira_necessaria),
+                delta=format_brl(rec_carteira_necessaria - receita_carteira_dia),
+                delta_color=cor_delta
+            )
+            
+            k3.metric(
+                "Spread Necessário vs CDI",
+                f"{(taxa_mes_nec - (cdi_am*100)):.2f}% a.m.",
+                help="Taxa da carteira menos o custo do CDI mensal."
+            )
+
+        st.markdown("---")
+        
+        # --- GRÁFICO DE SENSIBILIDADE ---
+        st.markdown("#### 📊 Curva de Equilíbrio: ROE vs Taxa Necessária")
+        
+        # Gerar dados para o gráfico
+        roe_range = np.linspace(max(0, target_roe_jr - 20), target_roe_jr + 20, 50)
+        taxas_necessarias = []
+        
+        for roe in roe_range:
+            r_d = (roe / 100.0 * valor_junior) / 252.0
+            r_tot = r_d + custos_totais_dia
+            r_cart = r_tot - receita_caixa_dia - receita_outros_dia
+            if valor_recebiveis > 0:
+                t_d = r_cart / valor_recebiveis
+                t_m = ((1 + t_d)**21 - 1) * 100
+            else:
+                t_m = 0
+            taxas_necessarias.append(t_m)
+
+        fig_target = go.Figure()
+        
+        # 1. Curva Necessária
+        fig_target.add_trace(go.Scatter(
+            x=roe_range, 
+            y=taxas_necessarias,
+            mode='lines',
+            name='Curva de Equilíbrio',
+            line=dict(color='#2980b9', width=4)
+        ))
+        
+        # 2. Ponto META (Selecionado)
+        fig_target.add_trace(go.Scatter(
+            x=[target_roe_jr],
+            y=[taxa_mes_nec],
+            mode='markers+text',
+            name='Sua Meta',
+            text=['META'], textposition='top center',
+            marker=dict(size=12, color='#e74c3c', symbol='diamond')
+        ))
+
+        # 3. Ponto ATUAL (NOVO!)
+        # O ponto atual é: X = ROE Atual, Y = Taxa Atual
+        fig_target.add_trace(go.Scatter(
+            x=[retorno_anualizado_junior * 100],
+            y=[taxa_carteira_am_pct],
+            mode='markers+text',
+            name='Cenário Atual',
+            text=['ATUAL'], textposition='top left',
+            marker=dict(size=14, color='#27ae60', symbol='star') # Estrela Verde
+        ))
+
+        # Linha da Taxa Atual (Referência)
+        fig_target.add_hline(
+            y=taxa_carteira_am_pct, 
+            line_dash="dash", 
+            line_color="green", 
+            annotation_text=f"Taxa Atual ({taxa_carteira_am_pct:.2f}%)",
+            annotation_position="bottom right"
+        )
+
+        fig_target.update_layout(
+            xaxis_title="ROE Alvo da Júnior (% a.a.)",
+            yaxis_title="Taxa Média Mensal Necessária (%)",
+            height=400,
+            margin=dict(l=20, r=20, t=40, b=20),
+            hovermode="x unified",
+            legend=dict(orientation="h", y=1.02, xanchor="center", x=0.5)
+        )
+        
+        st.plotly_chart(fig_target, use_container_width=True)
     
 # -------------------------------------------------------------------
 # ABA 4 – DRE PROJETADO (MÊS A MÊS POR 1 ANO)
