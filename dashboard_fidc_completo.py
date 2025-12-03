@@ -576,12 +576,6 @@ with tab_estrutura:
 
         fig_stack.update_layout(
             barmode='stack',
-            title={
-                'text': "Subordinação Visual",
-                'x': 0.5,
-                'xanchor': 'center',
-                'font': {'size': 16, 'color': '#2c3e50'}
-            },
             showlegend=True,
             margin=dict(l=20, r=20, t=50, b=20),
             height=280,
@@ -701,77 +695,7 @@ with tab_estrutura:
         st.metric("Retorno Anualizado da Cota Sênior", format_pct(retorno_anualizado_senior))
     
 
-    # ---------------------------------------------------------------
-    # NOVA SEÇÃO: GRÁFICOS DE RETORNO / PDD / WATERFALL
-    # ---------------------------------------------------------------
     st.markdown("---")
-   # ---------------------------------------------------------------
-    # 2) PDD simulada vs limite de perda (mini-stress regulatório)
-    # ---------------------------------------------------------------
-    st.markdown(
-        '<div class="section-header">🧨 PDD Simulada vs Limite de Subordinação</div>',
-        unsafe_allow_html=True,
-    )
-
-    if pdd_base <= 0 or valor_recebiveis <= 0 or perda_lim_sub <= 0:
-        st.info(
-            "A PDD base, o saldo de recebíveis ou o limite de perda estão zerados. "
-            "Ajuste os parâmetros para visualizar o gráfico de stress."
-        )
-    else:
-        # multiplicador máximo: 0 até ~1.5x o multiplicador de ruptura, com mínimo 2x
-        mult_ruptura_base = perda_lim_sub / pdd_base if pdd_base > 0 else 0
-        max_mult = max(2.0, mult_ruptura_base * 1.5)
-
-        mult_grid = np.linspace(0.0, max_mult, 60)
-        perdas_sim = mult_grid * pdd_base
-        perdas_pct = (perdas_sim / valor_recebiveis) * 100.0
-
-        limite_pct = perda_lim_sub_pct_recebiveis * 100.0
-
-        fig_pdd = go.Figure()
-        fig_pdd.add_trace(
-            go.Scatter(
-                x=mult_grid,
-                y=perdas_pct,
-                mode="lines",
-                name="PDD simulada (% dos recebíveis)",
-                line=dict(width=3),
-            )
-        )
-        fig_pdd.add_trace(
-            go.Scatter(
-                x=[0, max_mult],
-                y=[limite_pct, limite_pct],
-                mode="lines",
-                name="Limite de perda (subordinação mínima)",
-                line=dict(dash="dash", width=2),
-            )
-        )
-
-        # marcador de ruptura, se estiver no range
-        if 0 <= mult_ruptura_base <= max_mult:
-            fig_pdd.add_trace(
-                go.Scatter(
-                    x=[mult_ruptura_base],
-                    y=[limite_pct],
-                    mode="markers+text",
-                    name="Ponto de ruptura",
-                    text=[f"m* = {mult_ruptura_base:.2f}x"],
-                    textposition="bottom center",
-                    marker=dict(size=10, symbol="x"),
-                )
-            )
-
-        fig_pdd.update_layout(
-            xaxis_title="Multiplicador sobre a PDD Base",
-            yaxis_title="Perda acumulada (% dos recebíveis)",
-            height=350,
-            margin=dict(l=20, r=20, t=40, b=40),
-            legend=dict(orientation="h", y=1.05, x=0.5, xanchor="center"),
-        )
-        st.plotly_chart(fig_pdd, use_container_width=True)
-
     # -----------------------------
     # WATERFALL - Escolha Dia ou Ano
     # -----------------------------
@@ -1044,10 +968,26 @@ with tab_risco:
             jr_sim = max(valor_junior - perda, 0.0)
             sub_grid.append(jr_sim / pl_sim * 100)
 
+        # Cálculos do Ponto Selecionado
         pl_sim_sel = max(pl_total - perda_sim, 1e-9)
         jr_sim_sel = max(valor_junior - perda_sim, 0.0)
         sub_sel = jr_sim_sel / pl_sim_sel * 100
 
+        # Cálculo do Aporte Necessário para Reenquadramento (CORRIGIDO)
+        # Se a subordinação simulada (sub_sel) for menor que a mínima (sub_min_pct)
+        if sub_sel < sub_min_pct:
+            numerador = (sub_min * pl_sim_sel) - jr_sim_sel
+            denominador = 1 - sub_min
+            
+            # CORREÇÃO AQUI: Usando 'denominador' (em português)
+            if denominador != 0:
+                aporte_reenquadramento = max(0.0, numerador / denominador)
+            else:
+                aporte_reenquadramento = 0.0
+        else:
+            aporte_reenquadramento = 0.0
+
+        # Gráfico
         fig_sub = go.Figure()
         fig_sub.add_trace(go.Scatter(
             x=perdas_grid,
@@ -1081,10 +1021,27 @@ with tab_risco:
         )
         st.plotly_chart(fig_sub, use_container_width=True)
 
-        col_sim1, col_sim2, col_sim3 = st.columns(3)
+        # ---- 4 CARDS FINAIS (Agora com o Aporte) ----
+        col_sim1, col_sim2, col_sim3, col_sim4 = st.columns(4)
+        
         col_sim1.metric("Perda simulada", format_brl(perda_sim))
         col_sim2.metric("PL pós-perda", format_brl(pl_sim_sel))
-        col_sim3.metric("Subordinação pós-perda", f"{sub_sel:.2f}%")
+        
+        # Card Subordinação com cor de alerta
+        cor_sub = "inverse" if sub_sel < sub_min_pct else "normal"
+        col_sim3.metric("Subordinação pós-perda", f"{sub_sel:.2f}%", delta=f"Mín: {sub_min_pct}%", delta_color="off")
+        
+        # Novo Card de Aporte
+        delta_aporte = "Necessário" if aporte_reenquadramento > 0 else "Enquadrado"
+        cor_aporte = "inverse" if aporte_reenquadramento > 0 else "off"
+        
+        col_sim4.metric(
+            "Aporte para Reenquadrar", 
+            format_brl(aporte_reenquadramento),
+            delta=delta_aporte,
+            delta_color=cor_aporte,
+            help="Quanto o cotista Júnior precisa injetar para o índice voltar ao mínimo exigido."
+        )
 
 # -------------------------------------------------------------------
 # ABA 3 – ANÁLISE DE SENSIBILIDADE E SIMULAÇÃO (VERSÃO FINAL DEFINITIVA)
@@ -1096,12 +1053,10 @@ with tab_alvo:
     pct_caixa_aplicado_atual = 1.0 
     
     # Criar as 4 sub-tabs conforme sua estrutura (Sem a aba de sensibilidade isolada)
-    subtab_sim_taxa, subtab_cenarios, subtab_breakeven, subtab_heatmap = st.tabs([
+    subtab_sim_taxa, subtab_cenarios = st.tabs([
         "🚀 Simulador de Taxa (Unitário)",
-        "🔥 Simulador de Cenários (Fundo)",
-        "⚖️ Break-even Analysis",
-        "🌡️ Heatmap de Risco"
-    ])
+        "🔥 Simulador de Cenários (Fundo)"
+        ])
     
     # ============================================================
     # SUB-ABA 0: SIMULADOR DE TAXA UNITÁRIO (SEU CÓDIGO ORIGINAL)
@@ -1434,70 +1389,7 @@ with tab_alvo:
         })
         st.dataframe(df_comp_sim, use_container_width=True, hide_index=True)
 
-    # ============================================================
-    # SUB-ABA 2: BREAK-EVEN (CORRIGIDO: USA VARIAVEL GLOBAL)
-    # ============================================================
-    with subtab_breakeven:
-        st.markdown("### ⚖️ Análise de Break-even")
-        c1, c2 = st.columns([3, 1])
-        with c2:
-            pdd_max = st.slider("PDD Máxima", 1.0, 5.0, 3.0, 0.1, key="be_pdd")
-        with c1:
-            mults = np.linspace(0.5, pdd_max, 30)
-            tx_min = []
-            # Custo fixo Global
-            custo_fixo = custo_senior_dia + custo_mezz_dia + custo_adm_dia + custo_gestao_dia + custo_outros_dia
-            # Receita Fixa Global (CORREÇÃO DO NAME_ERROR)
-            rec_fixa = receita_caixa_dia + receita_outros_dia
-            
-            for m in mults:
-                pdd_local = pdd_dia * m
-                custo_total = custo_fixo + pdd_local
-                rec_nec = custo_total - rec_fixa
-                
-                if valor_recebiveis > 0:
-                    t_dia = rec_nec / valor_recebiveis
-                    t_am = ((1+t_dia)**21 - 1) * 100
-                    tx_min.append(t_am)
-                else:
-                    tx_min.append(0)
-            
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=mults, y=tx_min, mode='lines', fill='tozeroy', name='Zona Prejuízo'))
-            fig.add_hline(y=taxa_carteira_am_pct, line_dash='dash', line_color='green', annotation_text="Taxa Atual")
-            fig.update_layout(height=400, title="Taxa Mínima para Zerar Resultado", xaxis_title="Mult PDD", yaxis_title="Taxa % a.m.")
-            st.plotly_chart(fig, use_container_width=True)
-
-    # ============================================================
-    # SUB-ABA 3: HEATMAP (CORRIGIDO: USA VARIAVEL GLOBAL)
-    # ============================================================
-    with subtab_heatmap:
-        st.markdown("### 🌡️ Heatmap: Taxa vs PDD")
-        x_tx = np.linspace(taxa_carteira_am_pct * 0.5, taxa_carteira_am_pct * 1.5, 15)
-        y_pd = np.linspace(0.5, 3.0, 15)
-        z = []
-        
-        for p in y_pd:
-            row = []
-            for t in x_tx:
-                # CORREÇÃO DO NAME_ERROR: Usar 'receita_caixa_dia' (GLOBAL) e não '_sim'
-                rec = valor_recebiveis * mensal_to_diario(t/100) + receita_caixa_dia + receita_outros_dia
-                
-                cus = custo_senior_dia + custo_mezz_dia + custo_adm_dia + custo_gestao_dia + (pdd_dia * p) + custo_outros_dia
-                res = rec - cus
-                # Cálculo Simples (* 252)
-                ret = (res * 252 / valor_junior * 100) if valor_junior > 0 else 0
-                row.append(ret)
-            z.append(row)
-            
-        fig = go.Figure(data=go.Heatmap(
-            z=z, x=[f"{v:.1f}%" for v in x_tx], y=[f"{v:.1f}x" for v in y_pd],
-            colorscale='RdYlGn', colorbar=dict(title='Retorno (%)')
-        ))
-        fig.add_trace(go.Scatter(x=[f"{taxa_carteira_am_pct:.1f}%"], y=["1.0x"], mode='markers', marker=dict(color='white', size=10, line=dict(color='black', width=2)), showlegend=False))
-        fig.update_layout(height=500, title="Retorno Júnior Anual (Simples)")
-        st.plotly_chart(fig, use_container_width=True)
-
+    
 # -------------------------------------------------------------------
 # ABA 4 – DRE PROJETADO (MÊS A MÊS POR 1 ANO)
 # -------------------------------------------------------------------
