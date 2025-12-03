@@ -471,15 +471,12 @@ perda_lim_sub_pct_recebiveis = (
 # -------------------------------------------------------------------
 # TABS
 # -------------------------------------------------------------------
-tab_estrutura, tab_risco, tab_alvo, tab_dre, tab_pdd_stress = st.tabs(
-    [
-        "📊 Estrutura & P&L",
-        "🧨 Risco, PDD & Subordinação",
-        "🎯 Taxa alvo da Cota Júnior",
-        "📑 DRE Projetado",
-        "🧪 Capacidade de Absorção de Perdas"
-    ]
-)
+tab_estrutura, tab_risco, tab_alvo, tab_dre = st.tabs([
+    "📊 Estrutura & P&L",
+    "🛡️ Gestão de Risco & Stress Test", # Aba unificada
+    "🎯 Análise de Sensibilidade",
+    "📑 DRE Projetado"
+])
 
 # -------------------------------------------------------------------
 # ABA 1 – ESTRUTURA & P&L
@@ -794,254 +791,279 @@ with tab_estrutura:
 
 
 # -------------------------------------------------------------------
-# ABA 2 – RISCO, PDD & SUBORDINAÇÃO (cenário base)
+# ABA 2 – GESTÃO DE RISCO & STRESS TEST (UNIFICADA E CORRIGIDA)
 # -------------------------------------------------------------------
 with tab_risco:
-    st.markdown("### Painel do Risco – PDD & Subordinação")
+    st.markdown('<div class="section-header">🛡️ Gestão de Risco & Stress Test</div>', unsafe_allow_html=True)
 
-    # ---- KPIs principais do risco ----
+    # ---- CÁLCULOS DOS KPIs ----
     folga_limite = perda_lim_sub - pdd_base
     folga_pct = folga_limite / perda_lim_sub * 100 if perda_lim_sub > 0 else 0.0
     cobertura_jr_x = valor_junior / pdd_base if pdd_base > 0 else np.inf
 
-    cR1, cR2, cR3, cR4 = st.columns(4)
-    cR1.metric(
-        "PDD Base (estoque)",
-        format_brl(pdd_base),
-        delta=f"{taxa_perda_esperada*100:.2f}% dos recebíveis",
-        delta_color="off",
-        help="PDD esperada aplicada sobre a carteira atual (bucketizada)."
-    )
-    cR2.metric(
-        "Limite por Subordinação",
-        format_brl(perda_lim_sub),
-        delta=f"{perda_lim_sub_pct_recebiveis*100:.2f}% dos recebíveis",
-        delta_color="off",
-        help="Perda máxima antes de violar o índice mínimo de subordinação informado."
-    )
-    cR3.metric(
-        "Folga vs Limite",
-        format_brl(folga_limite),
-        delta=f"{folga_pct:.1f}% de folga" if perda_lim_sub > 0 else "N/A",
-        delta_color="normal" if folga_limite >= 0 else "inverse",
-        help="Se negativo, já há desenquadramento em relação ao limite de perda."
-    )
-    cR4.metric(
-        "Cobertura Júnior vs PDD",
-        f"{cobertura_jr_x:.1f}x" if np.isfinite(cobertura_jr_x) else "∞",
-        delta=f"PL Jr: {format_brl(valor_junior)}",
-        delta_color="off",
-        help="Quantas vezes o PL Júnior cobre a PDD base."
-    )
-
-    st.markdown("---")
-    st.markdown("#### Distribuição de PDD por faixa de atraso")
-
-    buckets = [
-        "0–30", "31–60", "61–90", "91–120", "121–150",
-        "151–180", "181–240", "241–300", ">300"
-    ]
-    pct_vec   = np.array([
-        pct_0_30, pct_31_60, pct_61_90, pct_91_120, pct_121_150,
-        pct_151_180, pct_181_240, pct_241_300, pct_300p
-    ])
-    prov_vec  = np.array([
-        prov_0_30, prov_31_60, prov_61_90, prov_91_120, prov_121_150,
-        prov_151_180, prov_181_240, prov_241_300, prov_300p
-    ])
-
-    pct_norm = pct_vec / pct_vec.sum() if pct_vec.sum() > 0 else np.zeros_like(pct_vec)
-    perda_base_bucket = valor_recebiveis * pct_norm * (prov_vec / 100.0)
-
-    df_pdd = pd.DataFrame({
-        "Faixa (dias)": buckets,
-        "% carteira (input)": pct_vec,
-        "% carteira (normalizada)": pct_norm * 100,
-        "Provisão % (input)": prov_vec,
-        "Perda esperada (R$)": perda_base_bucket
-    })
-
-    col_tbl, col_chart = st.columns([1.3, 1])
-    with col_tbl:
-        st.dataframe(
-            df_pdd.style.format({
-                "% carteira (input)": "{:.1f}",
-                "% carteira (normalizada)": "{:.1f}",
-                "Provisão % (input)": "{:.1f}",
-                "Perda esperada (R$)": "R$ {:,.2f}".format,
-            }),
-            use_container_width=True,
-            height=260
-        )
-    with col_chart:
-        fig_buckets = go.Figure()
-        fig_buckets.add_trace(
-            go.Bar(
-                x=df_pdd["Perda esperada (R$)"],
-                y=df_pdd["Faixa (dias)"],
-                orientation="h",
-                marker_color="#e67e22",
-                text=[format_brl(v) for v in df_pdd["Perda esperada (R$)"]],
-                textposition="outside",
-                name="Perda esperada"
-            )
-        )
-        fig_buckets.update_layout(
-            margin=dict(l=10, r=10, t=20, b=10),
-            height=260,
-            showlegend=False,
-            xaxis_title="Perda esperada (R$)"
-        )
-        st.plotly_chart(fig_buckets, use_container_width=True)
-
-    st.markdown("---")
-    st.markdown("#### PDD Base x Limite de Subordinação")
-
-    # Barra tipo bullet: PDD base + folga até o limite
-    barra_folga = max(perda_lim_sub - pdd_base, 0)
-    fig_limit = go.Figure()
-    fig_limit.add_trace(go.Bar(
-        y=["Exposição a perda"],
-        x=[pdd_base],
-        orientation="h",
-        name="PDD Base",
-        marker_color="#c0392b",
-        text=[format_brl(pdd_base)],
-        textposition="inside"
-    ))
-    fig_limit.add_trace(go.Bar(
-        y=["Exposição a perda"],
-        x=[barra_folga],
-        orientation="h",
-        name="Folga até limite",
-        marker_color="#27ae60",
-        text=[format_brl(barra_folga)],
-        textposition="inside"
-    ))
-    fig_limit.add_shape(
-        type="line",
-        x0=perda_lim_sub, x1=perda_lim_sub,
-        y0=-0.5, y1=0.5,
-        line=dict(color="black", dash="dash", width=2)
-    )
-    fig_limit.update_layout(
-        barmode="stack",
-        height=180,
-        margin=dict(l=30, r=30, t=20, b=20),
-        showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5),
-        xaxis_title="R$",
-    )
-    st.plotly_chart(fig_limit, use_container_width=True)
-
-    # Alertas / mensagens resumidas
-    impacto_junior = valor_junior - pdd_base
-    if folga_limite < 0:
-        st.error("⚠️ PDD base ultrapassa o limite de perda pela subordinação mínima. Recompor subordinação ou reduzir risco.")
-    elif impacto_junior < 0:
-        st.warning("⚠️ A PDD base consome todo o colchão da Cota Júnior.")
+    # Cálculo do Aporte (Reenquadramento)
+    pl_pos_pdd = max(0, pl_total - pdd_base)
+    jr_pos_pdd = max(0, valor_junior - pdd_base)
+    sub_atual_pos = jr_pos_pdd / pl_pos_pdd if pl_pos_pdd > 0 else 0.0
+    
+    if sub_atual_pos < sub_min and (1 - sub_min) != 0:
+        aporte_necessario = (sub_min * pl_pos_pdd - jr_pos_pdd) / (1 - sub_min)
+        aporte_necessario = max(0.0, aporte_necessario)
     else:
-        st.success("✅ PDD base abaixo do limite de perda e preservando o colchão da Cota Júnior.")
+        aporte_necessario = 0.0
+
+    # ---- SEÇÃO 1: PAINEL DE CONTROLE DE RISCO (KPIs) ----
+    cR1, cR2, cR3, cR4, cR5 = st.columns(5)
+    
+    cR1.metric("PDD Base (estoque)", format_brl(pdd_base), delta=f"{taxa_perda_esperada*100:.2f}% da carteira", delta_color="off")
+    cR2.metric("Limite por Subordinação", format_brl(perda_lim_sub), delta=f"{perda_lim_sub_pct_recebiveis*100:.2f}% da carteira", delta_color="off")
+    cR3.metric("Folga vs Limite", format_brl(folga_limite), delta=f"{folga_pct:.1f}% de folga" if perda_lim_sub > 0 else "N/A", delta_color="normal" if folga_limite >= 0 else "inverse")
+    cR4.metric("Cobertura Júnior vs PDD", f"{cobertura_jr_x:.1f}x" if np.isfinite(cobertura_jr_x) else "∞", delta=f"PL Jr: {format_brl(valor_junior)}", delta_color="off")
+    
+    cor_aporte = "off" if aporte_necessario == 0 else "inverse"
+    cR5.metric("Aporte Necessário", format_brl(aporte_necessario), delta="Para reenquadrar" if aporte_necessario > 0 else "Enquadrado", delta_color=cor_aporte)
 
     st.markdown("---")
-    st.markdown("#### Simulação dinâmica: perda x índice de subordinação")
 
-    if pl_total <= 0:
-        st.info("Informe um PL total maior que zero para simular a subordinação.")
-    else:
-        perda_ref = pdd_base if pdd_base > 0 else valor_junior * 0.2
-        perda_max = max(perda_ref * 2, valor_junior * 1.2, pl_total * 0.3, 1_000.0)
-        perda_sim = st.slider(
-            "Perda simulada (R$)",
-            min_value=0.0,
-            max_value=float(perda_max),
-            value=float(min(perda_ref, perda_max)),
-            step=float(max(perda_max / 100, 100.0)),
-            help="Escolha um valor de perda e veja o índice Júnior/PL após o choque."
-        )
+    # ---- SEÇÃO 2: VISÃO DETALHADA (Buckets e Limites) ----
+    col_det1, col_det2 = st.columns([1.2, 1])
 
-        # Curva de subordinação ao longo de perdas
-        perdas_grid = np.linspace(0, perda_max, 60)
-        sub_grid = []
-        for perda in perdas_grid:
-            pl_sim = max(pl_total - perda, 1e-9)
-            jr_sim = max(valor_junior - perda, 0.0)
-            sub_grid.append(jr_sim / pl_sim * 100)
-
-        # Cálculos do Ponto Selecionado
-        pl_sim_sel = max(pl_total - perda_sim, 1e-9)
-        jr_sim_sel = max(valor_junior - perda_sim, 0.0)
-        sub_sel = jr_sim_sel / pl_sim_sel * 100
-
-        # Cálculo do Aporte Necessário para Reenquadramento (CORRIGIDO)
-        # Se a subordinação simulada (sub_sel) for menor que a mínima (sub_min_pct)
-        if sub_sel < sub_min_pct:
-            numerador = (sub_min * pl_sim_sel) - jr_sim_sel
-            denominador = 1 - sub_min
-            
-            # CORREÇÃO AQUI: Usando 'denominador' (em português)
-            if denominador != 0:
-                aporte_reenquadramento = max(0.0, numerador / denominador)
-            else:
-                aporte_reenquadramento = 0.0
+    with col_det1:
+        st.markdown("#### 📊 Distribuição de PDD por Faixa")
+        
+        # --- CORREÇÃO DO ERRO DE ARRAY LENGTH ---
+        # Detecta quantas faixas vêm da Sidebar e ajusta os labels dinamicamente
+        num_faixas = len(buckets_pct_norm)
+        
+        if num_faixas == 6:
+            buckets = ["0–15", "16–30", "31–60", "61–90", "91–180", ">180"]
+        elif num_faixas == 9:
+            buckets = ["0–30", "31–60", "61–90", "91–120", "121–150", "151–180", "181–240", "241–300", ">300"]
         else:
-            aporte_reenquadramento = 0.0
+            buckets = [f"Faixa {i+1}" for i in range(num_faixas)]
+            
+        pct_vec = buckets_pct_norm * 100 
+        prov_vec = prov_rates * 100       
+        perda_base_bucket = valor_recebiveis * buckets_pct_norm * prov_rates
 
-        # Gráfico
-        fig_sub = go.Figure()
-        fig_sub.add_trace(go.Scatter(
-            x=perdas_grid,
-            y=sub_grid,
-            mode="lines",
-            name="Subordinação simulada (Jr / PL)",
-            line=dict(width=3, color="#1f77b4")
+        df_pdd = pd.DataFrame({
+            "Faixa (dias)": buckets,
+            "Carteira (%)": pct_vec,
+            "Provisão (%)": prov_vec,
+            "Perda (R$)": perda_base_bucket
+        })
+
+        st.dataframe(df_pdd.style.format({"Carteira (%)": "{:.1f}%", "Provisão (%)": "{:.1f}%", "Perda (R$)": "R$ {:,.2f}"}), use_container_width=True, height=220, hide_index=True)
+
+    with col_det2:
+        st.markdown("#### 📉 Exposição vs. Limite")
+        barra_folga = max(perda_lim_sub - pdd_base, 0)
+        fig_limit = go.Figure()
+        fig_limit.add_trace(go.Bar(y=["Carteira"], x=[pdd_base], orientation="h", name="PDD Base", marker_color="#c0392b", text=[format_brl(pdd_base)], textposition="inside"))
+        fig_limit.add_trace(go.Bar(y=["Carteira"], x=[barra_folga], orientation="h", name="Folga", marker_color="#27ae60", text=[format_brl(barra_folga)], textposition="inside"))
+        fig_limit.add_vline(x=perda_lim_sub, line_width=2, line_dash="dash", line_color="black", annotation_text="Limite Regulatório", annotation_position="top right")
+        fig_limit.update_layout(barmode="stack", height=220, margin=dict(l=20, r=20, t=30, b=20), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+        st.plotly_chart(fig_limit, use_container_width=True)
+
+    # ---- SEÇÃO 3: STRESS TEST DINÂMICO (FLEXÍVEL) ----
+    st.markdown("---")
+    st.markdown("### 🧪 Stress Test Dinâmico")
+    
+    if pl_total <= 0:
+        st.info("Informe um PL total maior que zero para simular.")
+    else:
+        # --- 1. CÁLCULO DO PONTO DE RUPTURA (BREAKEVEN) ---
+        # Perda máxima (L) tal que: (Jr - L) / (PL - L) = Sub_min
+        # L = (Jr - Sub_min * PL) / (1 - Sub_min)
+        if sub_min >= 1.0:
+            ruptura_rs = 0.0
+        else:
+            numerador = valor_junior - (sub_min * pl_total)
+            denominador = 1 - sub_min
+            ruptura_rs = max(0.0, numerador / denominador) if denominador != 0 else 0.0
+            
+            # A perda não pode ser maior que a própria cota júnior (equity floor)
+            if ruptura_rs > valor_junior:
+                ruptura_rs = valor_junior
+
+        # Multiplicador de ruptura (Quantas vezes a PDD atual?)
+        mult_ruptura = ruptura_rs / pdd_base if pdd_base > 0 else 0
+
+        # --- 2. SELETOR DE MODO DE SIMULAÇÃO ---
+        c_mode, _ = st.columns([1, 3])
+        with c_mode:
+            modo_simulacao = st.radio(
+                "Forma de Simulação:", 
+                ["Multiplicador de PDD (x)", "Valor Absoluto de Perda (R$)"],
+                horizontal=True
+            )
+
+        # --- 3. CONFIGURAÇÃO DOS EIXOS E SLIDERS ---
+        if modo_simulacao == "Multiplicador de PDD (x)":
+            # MODO MULTIPLICADOR
+            val_atual_x = 1.0
+            val_ruptura_x = mult_ruptura
+            
+            # Slider
+            max_slider = max(5.0, mult_ruptura * 1.5)
+            val_sim_x = st.slider(
+                "Multiplicar PDD Atual por:", 
+                0.0, float(max_slider), 1.0, 0.1, 
+                format="%.1fx"
+            )
+            
+            # Valores para cálculo
+            perda_simulada_rs = pdd_base * val_sim_x
+            
+            # Eixo X do gráfico
+            x_grid = np.linspace(0, max_slider, 100)
+            x_label = "Multiplicador sobre a PDD Base"
+            
+            # Função para converter X do grid em Perda R$
+            def get_loss_from_x(x): return pdd_base * x
+            
+            # Formatação do tooltip
+            hover_template = "Mult: %{x:.2f}x<br>Sub: %{y:.2f}%"
+
+        else:
+            # MODO VALOR ABSOLUTO (R$)
+            val_atual_x = pdd_base
+            val_ruptura_x = ruptura_rs
+            
+            # Slider
+            max_slider = max(ruptura_rs * 1.5, pdd_base * 5.0, 10000.0)
+            val_sim_x = st.slider(
+                "Defina a Perda Total (R$)", 
+                0.0, float(max_slider), float(pdd_base), 1000.0, 
+                format="R$ %.2f"
+            )
+            
+            # Valores para cálculo
+            perda_simulada_rs = val_sim_x
+            
+            # Eixo X do gráfico
+            x_grid = np.linspace(0, max_slider, 100)
+            x_label = "Perda Total Acumulada (R$)"
+            
+            # Função para converter X do grid em Perda R$
+            def get_loss_from_x(x): return x
+            
+            # Formatação do tooltip
+            hover_template = "Perda: R$ %{x:,.2f}<br>Sub: %{y:.2f}%"
+
+        # --- 4. CÁLCULO DAS CURVAS ---
+        y_sub = []
+        for x in x_grid:
+            loss = get_loss_from_x(x)
+            pl_s = max(pl_total - loss, 1e-9) # Evitar div/0
+            jr_s = max(valor_junior - loss, 0.0)
+            y_sub.append(jr_s / pl_s * 100)
+
+        # Ponto Simulado (Bolinha Roxa)
+        pl_pos_sim = max(pl_total - perda_simulada_rs, 1e-9)
+        jr_pos_sim = max(valor_junior - perda_simulada_rs, 0.0)
+        sub_pos_sim = jr_pos_sim / pl_pos_sim * 100
+
+        # Ponto Atual (Quadrado Preto)
+        pl_pos_atual = max(pl_total - pdd_base, 1e-9)
+        jr_pos_atual = max(valor_junior - pdd_base, 0.0)
+        sub_pos_atual = jr_pos_atual / pl_pos_atual * 100
+
+        # Aporte Necessário (Se simulado < minimo)
+        if sub_pos_sim < sub_min_pct:
+            num = (sub_min * pl_pos_sim) - jr_pos_sim
+            den = 1 - sub_min
+            aporte_sim = max(0.0, num / den) if den != 0 else 0.0
+        else:
+            aporte_sim = 0.0
+
+        # --- 5. PLOTAGEM DO GRÁFICO ---
+        fig_stress = go.Figure()
+
+        # Linha Azul (Curva)
+        fig_stress.add_trace(go.Scatter(
+            x=x_grid, y=y_sub, mode='lines', name='Índice Subordinação',
+            line=dict(color='#2980b9', width=3),
+            hovertemplate=hover_template
         ))
-        fig_sub.add_trace(go.Scatter(
-            x=[perda_sim],
-            y=[sub_sel],
-            mode="markers+text",
-            name="Perda escolhida",
-            marker=dict(size=10, color="#d62728", symbol="diamond"),
-            text=[f"{sub_sel:.2f}%"],
-            textposition="top center"
-        ))
-        fig_sub.add_hline(
-            y=sub_min_pct,
-            line_dash="dash",
-            line_color="gray",
-            annotation_text=f"Subordinação mínima: {sub_min_pct:.1f}%",
+
+        # Linha Vermelha (Limite Regulatório)
+        fig_stress.add_hline(
+            y=sub_min_pct, 
+            line_dash="dash", line_color="#c0392b",
+            annotation_text=f"Mínimo: {sub_min_pct:.1f}%", 
             annotation_position="bottom right"
         )
-        fig_sub.update_layout(
-            height=320,
-            xaxis_title="Perda (R$)",
-            yaxis_title="Índice Júnior / PL (%)",
-            margin=dict(l=40, r=40, t=40, b=40),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
-        )
-        st.plotly_chart(fig_sub, use_container_width=True)
 
-        # ---- 4 CARDS FINAIS (Agora com o Aporte) ----
-        col_sim1, col_sim2, col_sim3, col_sim4 = st.columns(4)
-        
-        col_sim1.metric("Perda simulada", format_brl(perda_sim))
-        col_sim2.metric("PL pós-perda", format_brl(pl_sim_sel))
-        
-        # Card Subordinação com cor de alerta
-        cor_sub = "inverse" if sub_sel < sub_min_pct else "normal"
-        col_sim3.metric("Subordinação pós-perda", f"{sub_sel:.2f}%", delta=f"Mín: {sub_min_pct}%", delta_color="off")
-        
-        # Novo Card de Aporte
-        delta_aporte = "Necessário" if aporte_reenquadramento > 0 else "Enquadrado"
-        cor_aporte = "inverse" if aporte_reenquadramento > 0 else "off"
-        
-        col_sim4.metric(
-            "Aporte para Reenquadrar", 
-            format_brl(aporte_reenquadramento),
-            delta=delta_aporte,
-            delta_color=cor_aporte,
-            help="Quanto o cotista Júnior precisa injetar para o índice voltar ao mínimo exigido."
+        # Ponto de Ruptura (X Vermelho)
+        if 0 <= val_ruptura_x <= max_slider:
+            fig_stress.add_trace(go.Scatter(
+                x=[val_ruptura_x], y=[sub_min_pct],
+                mode='markers', name='Ponto de Ruptura',
+                marker=dict(symbol='x', size=12, color='red'),
+                hoverinfo='skip'
+            ))
+            # Linha vertical pontilhada no ponto de ruptura
+            fig_stress.add_vline(x=val_ruptura_x, line_width=1, line_dash="dot", line_color="gray")
+
+        # Ponto HOJE (Quadrado Preto)
+        # Só mostramos se estiver dentro do range do gráfico
+        if 0 <= val_atual_x <= max_slider:
+            fig_stress.add_trace(go.Scatter(
+                x=[val_atual_x], y=[sub_pos_atual],
+                mode='markers+text', name='HOJE',
+                text=["HOJE"], textposition="top right",
+                marker=dict(symbol='square', size=10, color='black')
+            ))
+
+        # Ponto SIMULADO (Bolinha Roxa)
+        label_sim = f"{val_sim_x:.1f}x" if modo_simulacao == "Multiplicador de PDD (x)" else "Simulado"
+        fig_stress.add_trace(go.Scatter(
+            x=[val_sim_x], y=[sub_pos_sim],
+            mode='markers+text', name='SIMULAÇÃO',
+            text=[label_sim], textposition="top center",
+            marker=dict(size=14, color='#8e44ad', line=dict(width=2, color='white'))
+        ))
+
+        fig_stress.update_layout(
+            title="Dinâmica de Enquadramento",
+            xaxis_title=x_label,
+            yaxis_title="Índice de Subordinação (%)",
+            height=400,
+            margin=dict(l=20, r=20, t=60, b=20),
+            legend=dict(orientation="h", y=1.02, xanchor="center", x=0.5),
+            hovermode="x unified"
         )
+        
+        col_graph, col_kpi = st.columns([2, 1])
+        
+        with col_graph:
+            st.plotly_chart(fig_stress, use_container_width=True)
+
+        with col_kpi:
+            st.markdown("**Resultado do Choque:**")
+            
+            st.metric("Perda Total Simulada", format_brl(perda_simulada_rs))
+            
+            # Delta da Subordinação
+            cor_delta_sub = "normal" if sub_pos_sim >= sub_min_pct else "inverse"
+            st.metric(
+                "Subordinação Resultante", 
+                f"{sub_pos_sim:.2f}%", 
+                delta=f"{sub_pos_sim - sub_min_pct:.2f} p.p. vs Mínimo",
+                delta_color=cor_delta_sub
+            )
+
+            # Aporte
+            lbl_aporte = "Aporte Necessário" if aporte_sim > 0 else "Situação"
+            val_aporte = format_brl(aporte_sim) if aporte_sim > 0 else "Enquadrado"
+            cor_aporte = "inverse" if aporte_sim > 0 else "off"
+            
+            st.metric(lbl_aporte, val_aporte, delta_color=cor_aporte)
+            
+            if aporte_sim > 0:
+                st.warning(f"⚠️ O fundo desenquadrou! É necessário aportar **{format_brl(aporte_sim)}** na Cota Júnior.")
+
 
 # -------------------------------------------------------------------
 # ABA 3 – ANÁLISE DE SENSIBILIDADE E SIMULAÇÃO (VERSÃO FINAL DEFINITIVA)
@@ -1849,138 +1871,3 @@ with tab_dre:
         st.plotly_chart(fig_ret, use_container_width=True)
 
 
-    
-# -------------------------------------------------------------------
-# ABA 5 – CAPACIDADE DE ABSORÇÃO (Visualização Corrigida - Ponto 1.0x Fixo)
-# -------------------------------------------------------------------
-with tab_pdd_stress:
-    st.subheader("🧪 Stress Test: Capacidade de Absorção de Perdas")
-    
-    # --- VALIDAÇÕES E CÁLCULOS ESTRUTURAIS ---
-    if pl_total <= 0 or valor_junior <= 0:
-        st.error("O PL e a Cota Júnior precisam ser maiores que zero para calcular o stress.")
-    elif pdd_base <= 0:
-        st.warning("A PDD Base é zero. Ajuste as provisões (%) na barra lateral para ver o efeito do stress.")
-    else:
-        # 1. CÁLCULO DO PONTO DE RUPTURA
-        if sub_min >= 1.0:
-            limite_perda_enquadramento = 0.0
-        else:
-            numerador = valor_junior - (sub_min * pl_total)
-            denominador = 1 - sub_min
-            limite_perda_enquadramento = max(0.0, numerador / denominador) if denominador != 0 else 0.0
-            
-            if limite_perda_enquadramento > valor_junior:
-                limite_perda_enquadramento = valor_junior
-
-        # 2. CÁLCULOS DO CENÁRIO ATUAL
-        margem_seguranca_atual = limite_perda_enquadramento - pdd_base
-        mult_ruptura = limite_perda_enquadramento / pdd_base if pdd_base > 0 else 0
-        pdd_pct_recebiveis_atual = taxa_perda_esperada * 100 
-
-        # --- SEÇÃO 1: FOTOGRAFIA ATUAL ---
-        st.markdown("### 📸 Cenário Atual (Baseado nos parâmetros da Sidebar)")
-        col_real1, col_real2, col_real3, col_real4 = st.columns(4)
-        
-        with col_real1:
-            st.metric("PDD Atual (Esperada)", format_brl(pdd_base), delta=f"{pdd_pct_recebiveis_atual:.2f}% da Carteira", delta_color="off")
-        with col_real2:
-            st.metric("Capacidade Máxima de Perda", format_brl(limite_perda_enquadramento), help="Teto máximo de PDD.")
-        with col_real3:
-            cor_margem = "normal" if margem_seguranca_atual > 0 else "inverse"
-            st.metric("Margem de Segurança (R$)", format_brl(margem_seguranca_atual), delta="Dinheiro 'livre' no colchão", delta_color=cor_margem)
-        with col_real4:
-            st.metric("Multiplicador de Ruptura", f"{mult_ruptura:.2f}x", help="Se < 1.0x, o fundo já está desenquadrado hoje.")
-
-        st.divider()
-
-        # --- SEÇÃO 2: SIMULAÇÃO ---
-        st.markdown("### 🕹️ Simulação de Stress")
-        c_sim_input, c_sim_kpi = st.columns([1, 2])
-        
-        with c_sim_input:
-            st.markdown("**Calibre o nível de estresse:**")
-            # Ajuste dinâmico do máximo do slider para sempre caber o 1.0 e a ruptura
-            max_slider = max(5.0, mult_ruptura * 1.5)
-            user_mult = st.slider("Multiplicar PDD Atual por:", min_value=0.0, max_value=max_slider, value=1.0, step=0.1)
-            
-        perda_simulada = pdd_base * user_mult
-        margem_restante_simulada = limite_perda_enquadramento - perda_simulada
-        
-        jr_sim = max(0, valor_junior - perda_simulada)
-        pl_sim = max(0, pl_total - perda_simulada)
-        sub_sim_pct = (jr_sim / pl_sim * 100) if pl_sim > 0 else 0.0
-        
-        with c_sim_kpi:
-            k1, k2, k3 = st.columns(3)
-            if perda_simulada > limite_perda_enquadramento:
-                lbl_delta = "🚨 DESENQUADRADO"
-                cor_delta_sim = "inverse"
-            else:
-                lbl_delta = "✅ ENQUADRADO"
-                cor_delta_sim = "normal"
-
-            k1.metric("Nova PDD Simulada", format_brl(perda_simulada), delta=f"{user_mult:.1f}x da base", delta_color="off")
-            k2.metric("Subordinação Resultante", f"{sub_sim_pct:.2f}%", delta=f"Mínimo: {sub_min_pct:.2f}%", delta_color="off")
-            k3.metric("Margem Restante (Simulada)", format_brl(margem_restante_simulada), delta=lbl_delta, delta_color=cor_delta_sim)
-
-        # --- SEÇÃO 3: GRÁFICO ---
-        max_x_graph = max(user_mult * 1.2, mult_ruptura * 1.3, 2.0) # Garante que o 1.0 apareça
-        x_vals = np.linspace(0, max_x_graph, 100)
-        y_vals = []
-        
-        # Calcular y para x=1.0 (HOJE)
-        loss_today = pdd_base * 1.0
-        j_today = max(0, valor_junior - loss_today)
-        pl_today = max(0, pl_total - loss_today)
-        sub_today_pct = (j_today / pl_today * 100) if pl_today > 0 else 0.0
-
-        for m in x_vals:
-            p_loss = pdd_base * m
-            j_ = max(0, valor_junior - p_loss)
-            pl_ = max(0, pl_total - p_loss)
-            y_vals.append((j_ / pl_ * 100) if pl_ > 0 else 0.0)
-        
-        fig = go.Figure()
-        
-        # 1. Curva Azul
-        fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', name='Índice de Subordinação', line=dict(color='#2980b9', width=3)))
-        
-        # 2. Linha Vermelha (Piso)
-        fig.add_trace(go.Scatter(x=[0, max_x_graph], y=[sub_min_pct, sub_min_pct], mode='lines', name='Mínimo Regulatório', line=dict(color='#c0392b', dash='dash')))
-        
-        # 3. Ponto de Ruptura (X Vermelho)
-        if mult_ruptura <= max_x_graph:
-            fig.add_trace(go.Scatter(
-                x=[mult_ruptura], y=[sub_min_pct], mode='markers', name='Ponto de Ruptura',
-                marker=dict(symbol='x', size=12, color='red'),
-                hoverinfo='text', text=[f"Ruptura: {mult_ruptura:.2f}x"]
-            ))
-            fig.add_vline(x=mult_ruptura, line_width=1, line_dash="dot", line_color="gray", opacity=0.5)
-
-        # 4. Ponto HOJE (1.0x) - NOVO!
-        fig.add_trace(go.Scatter(
-            x=[1.0], y=[sub_today_pct], mode='markers+text', 
-            name='HOJE (Realidade)',
-            text=["HOJE (1.0x)"], textposition="bottom center",
-            marker=dict(size=10, color='black', symbol='square')
-        ))
-
-        # 5. Ponto Simulado (Bolinha Roxa)
-        fig.add_trace(go.Scatter(
-            x=[user_mult], y=[sub_sim_pct], mode='markers+text', 
-            name='SIMULAÇÃO',
-            text=[f"Simulado ({user_mult}x)"], textposition="top center",
-            marker=dict(size=15, color='#8e44ad', line=dict(width=2, color='white'))
-        ))
-
-        fig.update_layout(
-            title={'text': "Dinâmica de Enquadramento", 'y':0.95, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top'},
-            xaxis_title="Multiplicador sobre a PDD Base",
-            yaxis_title="Índice de Subordinação (%)",
-            height=450,
-            margin=dict(l=20, r=20, t=80, b=20),
-            legend=dict(orientation="h", y=1.02, xanchor="center", x=0.5)
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
