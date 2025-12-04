@@ -1558,7 +1558,7 @@ with tab_alvo:
         st.plotly_chart(fig_target, use_container_width=True)
     
 # -------------------------------------------------------------------
-# ABA 4 – DRE PROJETADO (MÊS A MÊS POR 1 ANO)
+# ABA 4 – DRE PROJETADO (MÊS A MÊS POR 1 ANO) - COM GRÁFICO DE COMPOSIÇÃO
 # -------------------------------------------------------------------
 with tab_dre:
     from io import BytesIO  # para exportar Excel
@@ -1583,8 +1583,8 @@ with tab_dre:
     # Valores "base" vindos do cenário atual
     base_taxa_carteira = taxa_carteira_am_pct
     base_pct_recebiveis = pct_recebiveis * 100
-    base_outras_receitas_mes = receita_outros_dia * (252 / 12)  # aprox. = outros_receitas_mensais
-    base_outros_custos_mes = custo_outros_dia * (252 / 12)      # aprox. = outros_custos_mensais
+    base_outras_receitas_mes = receita_outros_dia * (252 / 12)
+    base_outros_custos_mes = custo_outros_dia * (252 / 12)
 
     df_param_base = pd.DataFrame({
         "Mês": meses,
@@ -1593,7 +1593,6 @@ with tab_dre:
         "Outras receitas (R$/mês)": [base_outras_receitas_mes] * 12,
         "Outros custos (R$/mês)": [base_outros_custos_mes] * 12,
         "PDD manual (R$/mês)": [0.0] * 12,
-        # Movimento líquido: + = aporte, - = resgate
         "Movimento Júnior (R$/mês)": [0.0] * 12,
         "Movimento Mezz (R$/mês)": [0.0] * 12,
         "Movimento Sênior (R$/mês)": [0.0] * 12,
@@ -1613,7 +1612,7 @@ with tab_dre:
     # ---------------------------
     dias_uteis_ano = 252
     meses_ano = 12
-    dias_uteis_mes = dias_uteis_ano / meses_ano  # ~21 dias úteis/mês
+    dias_uteis_mes = dias_uteis_ano / meses_ano
 
     # PL inicial por classe (mês 1)
     pl_junior = valor_junior
@@ -1668,8 +1667,6 @@ with tab_dre:
         custo_adm_mes    = pl_total_mov  * taxa_adm_diaria    * dias_uteis_mes
         custo_gestao_mes = pl_total_mov  * taxa_gestao_diaria * dias_uteis_mes
 
-        # PDD aproximada mensal: % de perda esperada sobre recebíveis no ano,
-        # rateado em 12 meses. Soma valor manual informado.
         pdd_auto_mes = (
             valor_recebiveis_mes * taxa_perda_esperada / meses_ano
             if incluir_pdd else 0.0
@@ -1689,22 +1686,18 @@ with tab_dre:
             - custo_outros_mes_sim
         )
 
-        # Todo o resultado residual é da Cota Júnior
         resultado_junior_mes = resultado_fundo_mes
 
         # ----- PL FINAL DO MÊS -----
-        # Sênior e Mezz recebem juros; acumula o saldo já com o custo do mês.
         pl_mezz_final   = pl_mezz_mov + custo_mezz_mes
         pl_senior_final = pl_senior_mov + custo_senior_mes
         pl_junior_final = pl_junior_mov + resultado_junior_mes
-        # Total mostrado na visão gráfica reflete apenas Sênior + Mezz (saldo + juros)
-        pl_total_final  = pl_mezz_final + pl_senior_final
+        pl_total_final  = pl_mezz_final + pl_senior_final + pl_junior_final # Ajustado para PL Total Real
 
-        # Retorno da Júnior no mês (% sobre PL após movimentos)
+        # Retorno da Júnior no mês
         base_retorno_jr = pl_junior_mov if pl_junior_mov != 0 else 1.0
         retorno_jr_mes_pct = resultado_junior_mes / base_retorno_jr
 
-        # Guardar linha da DRE
         linhas_dre_mensal.append({
             "Mês": mes_label,
             "PL Inicial (R$)": pl_inicial_total,
@@ -1721,11 +1714,12 @@ with tab_dre:
             "Outros Custos (R$)": custo_outros_mes_sim,
             "Resultado Cota Júnior (R$)": resultado_junior_mes,
             "PL Final (R$)": pl_total_final,
+            "PL Final Sênior (R$)": pl_senior_final, # Guardado para o gráfico novo
+            "PL Final Mezz (R$)": pl_mezz_final,     # Guardado para o gráfico novo
             "PL Final Júnior (R$)": pl_junior_final,
             "Retorno Júnior no mês (%)": retorno_jr_mes_pct * 100,
         })
 
-        # Atualizar PL para o próximo mês
         pl_junior = pl_junior_final
         pl_mezz   = pl_mezz_final
         pl_senior = pl_senior_final
@@ -1738,11 +1732,8 @@ with tab_dre:
     st.markdown("#### DRE mês a mês (12 meses)")
 
     df_dre_show = df_dre_mensal.copy()
-
-    # Formatação numérica
     for col in df_dre_show.columns:
-        if col == "Mês":
-            continue
+        if col == "Mês": continue
         if "Retorno" in col and "(%)" in col:
             df_dre_show[col] = df_dre_show[col].apply(lambda x: f"{x:,.2f} %")
         else:
@@ -1751,123 +1742,241 @@ with tab_dre:
     st.dataframe(df_dre_show, use_container_width=True, height=500)
 
     # ---------------------------
-    # EXPORTAR PARÂMETROS + DRE PARA EXCEL
+    # GRÁFICO FINAL: COMPOSIÇÃO DETALHADA (CORES CORPORATIVAS/SÓBRIAS)
     # ---------------------------
-    st.markdown("#### 📥 Exportar para Excel")
-
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        df_param.to_excel(writer, index=False, sheet_name="Parametros_12m")
-        df_dre_mensal.to_excel(writer, index=False, sheet_name="DRE_12m")
-    buffer.seek(0)
-
-    st.download_button(
-        label="Baixar Excel (Parâmetros + DRE 12m)",
-        data=buffer,
-        file_name="fidc_dre_12m.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    st.markdown("---")
+    st.markdown("#### Composição do Resultado: Origem da Receita vs. Distribuição (%)")
+    st.caption(
+        "**Direita (Distribuição):** Note a separação entre **Obrigações** (Tons de Cinza), **Risco** (Vermelho) e **Lucro Líquido** (Verde)."
     )
 
-    # ---------------------------
-    # GRÁFICOS RESUMO
+    # --- PREPARAÇÃO DOS DADOS ---
+    p_rec_cart, p_rec_caixa, p_rec_outras = [], [], []
+    p_pdd, p_taxas, p_senior, p_mezz, p_junior = [], [], [], [], []
+    
+    # Listas para Tooltip
+    v_rec_cart, v_rec_caixa, v_rec_outras = [], [], []
+    v_pdd, v_taxas, v_senior, v_mezz, v_junior = [], [], [], [], []
+
+    for i, row in df_dre_mensal.iterrows():
+        rev = row["Receita Total (R$)"]
+        
+        # Valores Absolutos
+        v_rc = row["Receita Carteira (R$)"]
+        v_rx = row["Receita Caixa (R$)"]
+        v_ro = row["Outras Receitas (R$)"]
+        
+        v_pd = row["PDD (R$)"]
+        v_tx = row["Taxa Adm (R$)"] + row["Taxa Gestão (R$)"] + row["Outros Custos (R$)"]
+        v_sr = row["Custo Sênior (R$)"]
+        v_mz = row["Custo Mezz (R$)"]
+        v_jr = row["Resultado Cota Júnior (R$)"]
+        
+        # Tooltip
+        v_rec_cart.append(v_rc); v_rec_caixa.append(v_rx); v_rec_outras.append(v_ro)
+        v_pdd.append(v_pd); v_taxas.append(v_tx); v_senior.append(v_sr); v_mezz.append(v_mz); v_junior.append(v_jr)
+        
+        if rev > 0:
+            p_rec_cart.append(v_rc/rev); p_rec_caixa.append(v_rx/rev); p_rec_outras.append(v_ro/rev)
+            p_pdd.append(v_pd/rev); p_taxas.append(v_tx/rev); p_senior.append(v_sr/rev); p_mezz.append(v_mz/rev); p_junior.append(v_jr/rev)
+        else:
+            p_rec_cart.append(0); p_rec_caixa.append(0); p_rec_outras.append(0)
+            p_pdd.append(0); p_taxas.append(0); p_senior.append(0); p_mezz.append(0); p_junior.append(0)
+
+    fig_dual = go.Figure()
+
+    # --- GRUPO 1: ORIGEM (AZUIS - Mantido) ---
+    
+    # 1. Juros Carteira
+    fig_dual.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"], y=p_rec_cart, name="Rec. Carteira", offsetgroup=0,
+        marker_color="#154360", # Azul Marinho
+        text=[f"{p:.1%}" if p>0.05 else "" for p in p_rec_cart], textposition="auto", textfont=dict(color="white"),
+        hovertemplate="Carteira: %{y:.1%}<br>R$ %{customdata}<extra></extra>", customdata=[format_brl(v) for v in v_rec_cart]
+    ))
+    
+    # 2. Rendimento Caixa
+    fig_dual.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"], y=p_rec_caixa, name="Rec. Caixa", offsetgroup=0, base=p_rec_cart,
+        marker_color="#5DADE2", # Azul Claro
+        text=[f"{p:.1%}" if p>0.05 else "" for p in p_rec_caixa], textposition="auto", textfont=dict(color="black"),
+        hovertemplate="Caixa: %{y:.1%}<br>R$ %{customdata}<extra></extra>", customdata=[format_brl(v) for v in v_rec_caixa]
+    ))
+
+    # 3. Outras Receitas
+    base_outras = [x + y for x, y in zip(p_rec_cart, p_rec_caixa)]
+    fig_dual.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"], y=p_rec_outras, name="Outras Rec.", offsetgroup=0, base=base_outras,
+        marker_color="#D6EAF8", # Azul Bebê
+        text=[f"{p:.1%}" if p>0.05 else "" for p in p_rec_outras], textposition="auto", textfont=dict(color="black"),
+        hovertemplate="Outras: %{y:.1%}<br>R$ %{customdata}<extra></extra>", customdata=[format_brl(v) for v in v_rec_outras]
+    ))
+
+
+    # --- GRUPO 2: DESTINO (PALETA CORPORATIVA SÓBRIA) ---
+    
+    # 1. PDD (Vermelho Queimado - Destaque de Perda)
+    fig_dual.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"], y=p_pdd, name="PDD", offsetgroup=1,
+        marker_color="#B03A2E", # Vermelho Escuro
+        text=[f"{p:.1%}" if p>0.03 else "" for p in p_pdd], textposition="auto", textfont=dict(color="white"),
+        hovertemplate="PDD: %{y:.1%}<br>R$ %{customdata}<extra></extra>", customdata=[format_brl(v) for v in v_pdd]
+    ))
+
+    # 2. Taxas (Cinza Claro - Operacional)
+    base_taxas = p_pdd
+    fig_dual.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"], y=p_taxas, name="Taxas/Desp.", offsetgroup=1, base=base_taxas,
+        marker_color="#BDC3C7", # Prata
+        text=[f"{p:.1%}" if p>0.03 else "" for p in p_taxas], textposition="auto", textfont=dict(color="black"),
+        hovertemplate="Taxas: %{y:.1%}<br>R$ %{customdata}<extra></extra>", customdata=[format_brl(v) for v in v_taxas]
+    ))
+
+    # 3. Sênior (Cinza Chumbo - Obrigação Principal)
+    base_senior = [x + y for x, y in zip(base_taxas, p_taxas)]
+    fig_dual.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"], y=p_senior, name="Sênior", offsetgroup=1, base=base_senior,
+        marker_color="#566573", # Chumbo
+        text=[f"{p:.1%}" if p>0.03 else "" for p in p_senior], textposition="auto", textfont=dict(color="white"),
+        hovertemplate="Sênior: %{y:.1%}<br>R$ %{customdata}<extra></extra>", customdata=[format_brl(v) for v in v_senior]
+    ))
+
+    # 4. Mezz (Cinza Médio - Obrigação Secundária)
+    base_mezz = [x + y for x, y in zip(base_senior, p_senior)]
+    fig_dual.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"], y=p_mezz, name="Mezzanino", offsetgroup=1, base=base_mezz,
+        marker_color="#808B96", # Cinza Médio
+        text=[f"{p:.1%}" if p>0.03 else "" for p in p_mezz], textposition="auto", textfont=dict(color="white"),
+        hovertemplate="Mezz: %{y:.1%}<br>R$ %{customdata}<extra></extra>", customdata=[format_brl(v) for v in v_mezz]
+    ))
+
+    # 5. Júnior (Verde Esmeralda - Lucro)
+    base_junior = [x + y for x, y in zip(base_mezz, p_mezz)]
+    fig_dual.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"], y=p_junior, name="Lucro Júnior", offsetgroup=1, base=base_junior,
+        marker_color="#27AE60", # Verde
+        text=[f"{p:.1%}" if p>0.03 else "" for p in p_junior], textposition="inside", textfont=dict(color="white", size=11, family="Arial Black"),
+        hovertemplate="Lucro Jr: %{y:.1%}<br>R$ %{customdata}<extra></extra>", customdata=[format_brl(v) for v in v_junior]
+    ))
+
+    fig_dual.update_layout(
+        title="Origem da Receita (Esq) vs. Destinação (Dir)",
+        height=500,
+        xaxis=dict(title="Mês"),
+        yaxis=dict(
+            title="% do Total", 
+            tickformat=".0%", 
+            range=[0, 1.05]
+        ),
+        legend=dict(orientation="h", y=-0.15, x=0.5, xanchor='center'),
+        margin=dict(l=50, r=50, t=50, b=60),
+        hovermode="x unified",
+        bargap=0.15,      
+        bargroupgap=0.05  
+    )
+    
+    st.plotly_chart(fig_dual, use_container_width=True)
+
+   # ---------------------------
+    # GRÁFICOS RESUMO (APENAS PERFORMANCE)
     # ---------------------------
     st.markdown("---")
     st.markdown("#### Visão Gráfica dos Resultados")
 
-    col_g1, col_g2 = st.columns(2)
+    # Cálculos para o gráfico de performance
+    pdd_pct_sobre_junior = []
+    retorno_acumulado = []
+    acc = 1.0 # Fator acumulado inicial
 
-    # 1) Evolução do PL + PDD (REVERTIDO AO ORIGINAL)
-    with col_g1:
-        st.markdown("**Evolução do PL Final (Sênior/Mezz e Júnior)**")
-        fig_pl = go.Figure()
+    for i, row in df_dre_mensal.iterrows():
+        # 1. Impacto PDD %
+        base_j = row["PL Final Júnior (R$)"] - row["Resultado Cota Júnior (R$)"]
+        if base_j != 0:
+            val_pdd = (row["PDD (R$)"] / base_j * 100)
+        else:
+            val_pdd = 0.0
+        pdd_pct_sobre_junior.append(val_pdd)
+        
+        # 2. Retorno Acumulado
+        ret_mes = row["Retorno Júnior no mês (%)"] / 100.0
+        acc = acc * (1 + ret_mes)
+        retorno_acumulado.append((acc - 1) * 100)
 
-        # Original: PL Final aqui representa Sênior + Mezzanino (conforme seu cálculo no loop)
-        fig_pl.add_trace(go.Scatter(
-            x=df_dre_mensal["Mês"],
-            y=df_dre_mensal["PL Final (R$)"], 
-            mode="lines+markers",
-            name="PL Sênior + Mezz", # Ajustei o nome para ficar claro
-            yaxis="y1"
-        ))
-        fig_pl.add_trace(go.Scatter(
-            x=df_dre_mensal["Mês"],
-            y=df_dre_mensal["PL Final Júnior (R$)"],
-            mode="lines+markers",
-            name="PL Júnior",
-            yaxis="y1"
-        ))
-        # PDD em eixo secundário
-        fig_pl.add_trace(go.Bar(
-            x=df_dre_mensal["Mês"],
-            y=df_dre_mensal["PDD (R$)"],
-            name="PDD do mês (R$)",
-            opacity=0.4,
-            yaxis="y2"
-        ))
+    fig_ret = go.Figure()
 
-        fig_pl.update_layout(
-            height=380,
-            xaxis=dict(title="Mês"),
-            yaxis=dict(title="PL (R$)", side="left"),
-            yaxis2=dict(title="PDD (R$)", overlaying="y", side="right", showgrid=False),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
-            barmode="overlay",
-            margin=dict(l=50, r=50, t=40, b=40)
-        )
-        st.plotly_chart(fig_pl, use_container_width=True)
+    # Barras: Retorno Mensal (Eixo Y1 - Esquerda)
+    fig_ret.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"],
+        y=df_dre_mensal["Retorno Júnior no mês (%)"],
+        name="Retorno Mensal",
+        marker_color="#2980b9",
+        text=[f"{v:.1f}%" for v in df_dre_mensal["Retorno Júnior no mês (%)"]],
+        textposition="auto",
+        opacity=0.7,
+        yaxis="y1"
+    ))
 
-    # 2) Retorno da Júnior + PDD em % do PL Júnior (MANTIDO ORIGINAL)
-    with col_g2:
-        st.markdown("**Retorno da Cota Júnior e peso da PDD**")
+    # Linha: Impacto PDD (Eixo Y1 - Esquerda - Comparável ao retorno mensal)
+    fig_ret.add_trace(go.Scatter(
+        x=df_dre_mensal["Mês"],
+        y=pdd_pct_sobre_junior,
+        mode="lines+markers",
+        name="Impacto PDD / PL Jr",
+        line=dict(color="#c0392b", width=2, dash="dot"),
+        marker=dict(symbol="x"),
+        yaxis="y1", 
+        hovertemplate="PDD consome: %{y:.2f}% do PL Jr<extra></extra>"
+    ))
 
-        # PDD como % do PL Júnior após movimentos
-        pdd_pct_sobre_junior = []
-        for i, row in df_dre_mensal.iterrows():
-            base_j = row["PL Final Júnior (R$)"] - row["Resultado Cota Júnior (R$)"]  # aprox base
-            if base_j != 0:
-                pdd_pct_sobre_junior.append(row["PDD (R$)"] / base_j * 100)
-            else:
-                pdd_pct_sobre_junior.append(0.0)
+    # Linha: Retorno Acumulado (Eixo Y2 - Direita)
+    fig_ret.add_trace(go.Scatter(
+        x=df_dre_mensal["Mês"],
+        y=retorno_acumulado,
+        mode="lines+markers",
+        name="Retorno Acumulado",
+        line=dict(color="#27ae60", width=3),
+        marker=dict(size=6),
+        yaxis="y2", 
+        hovertemplate="Acumulado: %{y:.2f}%<extra></extra>"
+    ))
 
-        fig_ret = go.Figure()
-
-        fig_ret.add_trace(go.Bar(
-            x=df_dre_mensal["Mês"],
-            y=df_dre_mensal["Retorno Júnior no mês (%)"],
-            name="Retorno Júnior (%)",
-            text=[f"{v:,.2f}%" for v in df_dre_mensal["Retorno Júnior no mês (%)"]],
-            textposition="outside",
-            yaxis="y1"
-        ))
-
-        fig_ret.add_trace(go.Scatter(
-            x=df_dre_mensal["Mês"],
-            y=pdd_pct_sobre_junior,
-            mode="lines+markers",
-            name="PDD / PL Júnior (%)",
-            yaxis="y2"
-        ))
-
-        fig_ret.add_hline(y=0, line_dash="dash", line_color="gray", yref="y1")
-
-        fig_ret.update_layout(
-            height=380,
-            xaxis=dict(title="Mês"),
-            yaxis=dict(title="Retorno Júnior no mês (%)", side="left"),
-            yaxis2=dict(title="PDD / PL Júnior (%)", overlaying="y", side="right", showgrid=False),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
-            margin=dict(l=50, r=50, t=40, b=40)
-        )
-        st.plotly_chart(fig_ret, use_container_width=True)
+    fig_ret.update_layout(
+        title="Performance da Cota Júnior (%)",
+        height=500, 
+        xaxis=dict(title="Mês"),
+        
+        # Eixo Y1 (Mensal)
+        yaxis=dict(
+            title="Retorno / Impacto Mensal (%)", 
+            side="left",
+            showgrid=True
+        ),
+        
+        # Eixo Y2 (Acumulado)
+        yaxis2=dict(
+            title="Retorno Acumulado (%)", 
+            overlaying="y", 
+            side="right", 
+            showgrid=False,
+            zeroline=False
+        ),
+        
+        legend=dict(orientation="h", y=-0.15, x=0.5, xanchor='center'),
+        margin=dict(l=50, r=50, t=50, b=50),
+        hovermode="x unified"
+    )
+    st.plotly_chart(fig_ret, use_container_width=True)
 
     # ---------------------------
-    # 3) GRÁFICO DE CAPACIDADE DE CAPTAÇÃO (VISUAL LIMPO "SMART LABELS")
+    # 3) GRÁFICO DE CAPACIDADE DE CAPTAÇÃO (CORREÇÃO MATEMÁTICA DEFINITIVA)
     # ---------------------------
     st.markdown("---")
-    st.markdown("#### Capacidade de Captação (Headroom) vs. Subordinação")
+    st.markdown("#### Headroom: Capacidade de Captação (Sênior/Mezz)")
     st.caption(
-        "**Barras:** Volume financeiro disponível para captação (Verde) ou Excesso/Desenquadramento (Vermelho).\n"
-        "**Linha Azul:** Índice de Subordinação Real."
+        "**Racional:** Dado o saldo atual da Cota Júnior, quanto o fundo pode ter de PL Total?"
+        "\n\n"
+        "🟢 **Verde (Positivo):** Espaço livre para captar novas cotas Sênior/Mezz.\n\n"
+        "🔴 **Vermelho (Negativo):** Excesso de Sênior/Mezz. Necessário resgate (amortização) ou aporte na Júnior."
     )
     
     # Recálculo Correto dos Indicadores
@@ -1875,20 +1984,29 @@ with tab_dre:
     headroom_list = []
     
     for i, row in df_dre_mensal.iterrows():
-        pl_tot_real = row["PL Final (R$)"] + row["PL Final Júnior (R$)"]
+        # --- CORREÇÃO DO ERRO AQUI ---
+        # O "PL Final (R$)" da tabela já contém (Sênior + Mezz + Júnior).
+        # Não devemos somar a Júnior novamente.
+        pl_tot_real = row["PL Final (R$)"] 
         pl_jr_mes = row["PL Final Júnior (R$)"]
         
+        # 1. Subordinação Real (%)
         sub_real = (pl_jr_mes / pl_tot_real * 100) if pl_tot_real > 0 else 0
         subordinacao_real.append(sub_real)
         
+        # 2. Headroom (R$)
+        # Conta: Se tenho 10MM de Júnior e preciso de 25% de subordinação:
+        # PL Total Máximo Permitido = 10MM / 0.25 = 40MM.
+        # Se meu PL Total atual é 40MM, o espaço é 0.
         if sub_min > 0:
-            pl_max_permitido = pl_jr_mes / sub_min
-            espaco = pl_max_permitido - pl_tot_real
+            pl_total_maximo_teorico = pl_jr_mes / sub_min
+            espaco = pl_total_maximo_teorico - pl_tot_real
         else:
             espaco = 0
+        
         headroom_list.append(espaco)
 
-    # Função auxiliar para formatar números curtos (ex: 15.2M, 500k)
+    # Função de formatação para o gráfico
     def human_format(num):
         num = float('{:.3g}'.format(num))
         magnitude = 0
@@ -1899,26 +2017,25 @@ with tab_dre:
 
     fig_cap = go.Figure()
 
-    # Barras: Headroom (Eixo Y1 - R$)
-    colors_cap = ['#27ae60' if v >= 0 else '#c0392b' for v in headroom_list]
-    
-    # Texto das barras abreviado (ex: "15M")
+    # Barras: Headroom (Verde se positivo, Vermelho se negativo)
+    # Usamos uma tolerância de R$ 1,00 para evitar que erros de arredondamento pintem 0.00 de vermelho
+    colors_cap = ['#27ae60' if v >= -1.0 else '#c0392b' for v in headroom_list]
     text_barras = [human_format(v) for v in headroom_list]
     
     fig_cap.add_trace(go.Bar(
         x=df_dre_mensal["Mês"],
         y=headroom_list,
-        name="Capacidade (R$)",
+        name="Espaço Sênior/Mezz",
         marker_color=colors_cap,
-        text=text_barras,          # Texto curto visual
-        textposition="auto",       # Plotly decide se põe dentro ou fora
-        textfont=dict(size=11, color="white"), # Texto branco para contraste nas barras coloridas
-        hovertemplate="Mês: %{x}<br>Capacidade: R$ %{y:,.2f}<extra></extra>", # Tooltip completo
+        text=text_barras,          
+        textposition="auto",       
+        textfont=dict(size=11, color="white"), 
+        hovertemplate="Mês: %{x}<br>Espaço: R$ %{y:,.2f}<br><i>(Captação/Resgate Sênior)</i><extra></extra>", 
         yaxis="y1",
         opacity=0.85
     ))
 
-    # Linha: Índice de Subordinação Real (Eixo Y2 - %)
+    # Linha: Índice de Subordinação Real
     fig_cap.add_trace(go.Scatter(
         x=df_dre_mensal["Mês"],
         y=subordinacao_real,
@@ -1926,44 +2043,50 @@ with tab_dre:
         mode="lines+markers+text",
         text=[f"{v:.1f}%" for v in subordinacao_real],
         textposition="top center",
-        textfont=dict(size=12, color="#2c3e50", family="Arial Black"), # Fonte mais grossa e escura
+        textfont=dict(size=12, color="#2c3e50", family="Arial Black"), 
         line=dict(width=3, color="#2c3e50"),
         marker=dict(size=9, color="white", line=dict(width=2, color="#2c3e50")),
         hovertemplate="Mês: %{x}<br>Subordinação: %{y:.2f}%<extra></extra>",
         yaxis="y2"
     ))
 
-    # Linha Tracejada: Subordinação Mínima (Eixo Y2)
+    # Linha Tracejada: Subordinação Mínima
     fig_cap.add_hline(
         y=sub_min_pct, 
         line_dash="dash", 
         line_color="#c0392b", 
-        annotation_text=f"Mín: {sub_min_pct:.0f}%",
+        annotation_text=f"Mín: {sub_min_pct:.1f}%",
         annotation_font=dict(color="#c0392b", size=10),
         annotation_position="top right",
         yref="y2"
     )
     
-    # Linha Zero Reforçada
-    fig_cap.add_hline(y=0, line_color="black", line_width=1, yref="y1")
+    # Linha Zero Reforçada (Referência visual para as barras)
+    fig_cap.add_hline(y=0, line_color="black", line_width=1.5, yref="y1")
 
-    # Cálculo de Ranges para Sincronia Visual
+    # Sincronização Visual dos Eixos
+    # Objetivo: Alinhar o Zero da Esquerda (R$) com o Limite Mínimo da Direita (%)
     max_y1 = max(max(headroom_list, default=0), 0)
     min_y1 = min(min(headroom_list, default=0), 0)
     max_y2 = max(max(subordinacao_real, default=0), sub_min_pct)
     
-    # Ajustando limites para o texto não cortar
+    # 1. Definimos o range do eixo da direita (Porcentagem)
+    range_y2 = [0, max(40.0, max_y2 * 1.35)] 
+    
+    # 2. Calculamos onde a linha vermelha (%) está proporcionalmente nesse eixo
+    ratio_limit = sub_min_pct / range_y2[1] 
+    
+    # Fallback de segurança para evitar divisão por zero ou layout quebrado
+    if ratio_limit >= 0.9 or ratio_limit <= 0.1: 
+        ratio_limit = 0.5 
+    
+    # 3. Calculamos o tamanho total do eixo da esquerda (R$) para que o Zero fique na mesma proporção
+    # Altura necessaria acima do zero / (1 - ratio)
+    # Altura necessaria abaixo do zero / ratio
+    
     val_pos_max = max(1000.0, max_y1)
     val_neg_max = abs(min(-1000.0, min_y1))
     
-    # Define a proporção visual baseada no limite mínimo
-    # Se o limite é 20%, queremos que a linha de 0 R$ esteja visualmente nos 20% da altura do gráfico
-    # Isso é difícil de garantir perfeitamente responsivo, então vamos dar folga nos eixos.
-    
-    range_y2 = [0, max(40.0, max_y2 * 1.35)] # Folga generosa no topo para o texto da linha
-    
-    # Range Y1 calculado para tentar manter a proporção
-    ratio_limit = sub_min_pct / range_y2[1] 
     h_req1 = val_pos_max / (1 - ratio_limit)
     h_req2 = val_neg_max / ratio_limit
     total_height_y1 = max(h_req1, h_req2) * 1.2
@@ -1973,20 +2096,16 @@ with tab_dre:
     range_y1 = [y1_bottom, y1_top]
 
     fig_cap.update_layout(
-        title="Headroom de Captação e Enquadramento",
-        height=480, # Um pouco mais alto para caber tudo
+        title="Headroom de Captação (Sênior/Mezz) e Enquadramento",
+        height=480, 
         xaxis=dict(title="Mês"),
-        
-        # Eixo Y1: Dinheiro
         yaxis=dict(
-            title="Capacidade de Captação (R$)", 
+            title="Capacidade (R$)", 
             side="left",
             showgrid=False, 
             zeroline=False,
             range=range_y1
         ),
-        
-        # Eixo Y2: Porcentagem
         yaxis2=dict(
             title="Índice de Subordinação (%)", 
             overlaying="y", 
@@ -1995,7 +2114,6 @@ with tab_dre:
             gridcolor='#eeeeee',
             range=range_y2
         ),
-        
         legend=dict(
             orientation="h", 
             yanchor="top", y=-0.15, 
@@ -2006,3 +2124,226 @@ with tab_dre:
     )
 
     st.plotly_chart(fig_cap, use_container_width=True)
+
+    # ---------------------------
+    # NOVO GRÁFICO: COMPOSIÇÃO DO PL (VALOR + % - CORES SUAVES)
+    # ---------------------------
+    st.markdown("---")
+    st.markdown("#### Composição do Patrimônio Líquido (Evolução)")
+    st.caption("Evolução da proporção de cada classe. Rótulos mostram **Valor (MM)** e **Participação (%)**.")
+
+    # Listas para armazenar porcentagens e textos formatados
+    pct_senior, text_senior = [], []
+    pct_mezz, text_mezz = [], []
+    pct_junior, text_junior = [], []
+
+    # Função lambda para formatar MM (Ex: 4.5MM)
+    fmt_mm = lambda x: f"R$ {x/1_000_000:.1f}MM"
+
+    for i, row in df_dre_mensal.iterrows():
+        pl_tot = row["PL Final (R$)"]
+        
+        # Valores Absolutos
+        v_s = row["PL Final Sênior (R$)"]
+        v_m = row["PL Final Mezz (R$)"]
+        v_j = row["PL Final Júnior (R$)"]
+        
+        if pl_tot > 0:
+            # Cálculo dos %
+            p_s = (v_s / pl_tot) * 100
+            p_m = (v_m / pl_tot) * 100
+            p_j = (v_j / pl_tot) * 100
+            
+            pct_senior.append(p_s)
+            pct_mezz.append(p_m)
+            pct_junior.append(p_j)
+            
+            # Criação do Texto Combinado (Valor <br> %)
+            text_senior.append(f"<b>{fmt_mm(v_s)}</b><br>({p_s:.1f}%)")
+            text_mezz.append(f"<b>{fmt_mm(v_m)}</b><br>({p_m:.1f}%)")
+            text_junior.append(f"<b>{fmt_mm(v_j)}</b><br>({p_j:.1f}%)")
+        else:
+            pct_senior.append(0); text_senior.append("")
+            pct_mezz.append(0); text_mezz.append("")
+            pct_junior.append(0); text_junior.append("")
+
+    fig_comp = go.Figure()
+
+    # 1. Júnior (Base - Risco)
+    fig_comp.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"],
+        y=pct_junior,
+        name="Júnior",
+        marker_color="#EC7063", # Vermelho Suave
+        text=text_junior,       # Texto com Valor e %
+        textposition="inside",
+        textfont=dict(color="white", size=11),
+        hovertemplate="<b>Júnior</b><br>%{text}<extra></extra>"
+    ))
+
+    # 2. Mezzanino (Meio)
+    fig_comp.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"],
+        y=pct_mezz,
+        name="Mezzanino",
+        marker_color="#F7DC6F", # Amarelo Suave
+        text=text_mezz,
+        textposition="inside",
+        textfont=dict(color="black", size=11), # Preto para contraste no amarelo
+        hovertemplate="<b>Mezzanino</b><br>%{text}<extra></extra>"
+    ))
+
+    # 3. Sênior (Topo)
+    fig_comp.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"],
+        y=pct_senior,
+        name="Sênior",
+        marker_color="#7DCEA0", # Verde Suave
+        text=text_senior,
+        textposition="inside",
+        textfont=dict(color="white", size=11),
+        hovertemplate="<b>Sênior</b><br>%{text}<extra></extra>"
+    ))
+    
+    # Linha de Subordinação Mínima (Branca pontilhada para contraste suave)
+    fig_comp.add_hline(
+        y=sub_min_pct,
+        line_dash="dash",
+        line_color="white",
+        line_width=2,
+        annotation_text=f"Mín: {sub_min_pct:.0f}%",
+        annotation_position="bottom right",
+        annotation_font=dict(color="white")
+    )
+
+    fig_comp.update_layout(
+        barmode='stack',
+        height=500, # Um pouco mais alto para caber as duas linhas de texto
+        xaxis=dict(title="Mês"),
+        yaxis=dict(title="Proporção do PL (%)", range=[0, 100]),
+        legend=dict(orientation="h", y=-0.15, x=0.5, xanchor='center'),
+        margin=dict(l=50, r=50, t=40, b=40)
+    )
+    
+    st.plotly_chart(fig_comp, use_container_width=True)
+
+    # ---------------------------
+    # GRÁFICO FINAL: DIAGRAMA DE SANKEY (COM % E LEGIBILIDADE MELHORADA)
+    # ---------------------------
+    st.markdown("---")
+    st.markdown("#### Fluxo Financeiro: Da Origem ao Resultado (Acumulado 12 Meses)")
+    st.caption(
+        "**Esquerda:** Origem da Receita (Composição). | **Centro:** Receita Total (100%). | **Direita:** Para onde foi o dinheiro (Custos e Lucro)."
+    )
+
+    # 1. Calcular os totais acumulados do ano
+    # -- Origens --
+    tot_rec_cart = df_dre_mensal["Receita Carteira (R$)"].sum()
+    tot_rec_caixa = df_dre_mensal["Receita Caixa (R$)"].sum()
+    tot_rec_outras = df_dre_mensal["Outras Receitas (R$)"].sum()
+    
+    total_receita = tot_rec_cart + tot_rec_caixa + tot_rec_outras
+    
+    if total_receita > 0:
+        # -- Destinos --
+        tot_senior = df_dre_mensal["Custo Sênior (R$)"].sum()
+        tot_mezz = df_dre_mensal["Custo Mezz (R$)"].sum()
+        tot_pdd = df_dre_mensal["PDD (R$)"].sum()
+        
+        tot_taxas = (
+            df_dre_mensal["Taxa Adm (R$)"].sum() + 
+            df_dre_mensal["Taxa Gestão (R$)"].sum() + 
+            df_dre_mensal["Outros Custos (R$)"].sum()
+        )
+        
+        tot_junior = df_dre_mensal["Resultado Cota Júnior (R$)"].sum()
+
+        # -- Cálculo de Percentuais --
+        pct_cart = tot_rec_cart / total_receita
+        pct_caixa = tot_rec_caixa / total_receita
+        pct_outras = tot_rec_outras / total_receita
+        
+        pct_senior = tot_senior / total_receita
+        pct_mezz = tot_mezz / total_receita
+        pct_pdd = tot_pdd / total_receita
+        pct_taxas = tot_taxas / total_receita
+        pct_junior = tot_junior / total_receita
+
+        # 2. Configurar Rótulos (Labels) com HTML para formatação
+        # Estrutura: Nome <br> Valor <br> (Porcentagem)
+        
+        label_list = [
+            f"Juros Carteira<br><b>{format_brl(tot_rec_cart)}</b><br>({pct_cart:.1%})",   # 0
+            f"Rend. Caixa<br><b>{format_brl(tot_rec_caixa)}</b><br>({pct_caixa:.1%})",     # 1
+            f"Outras Rec.<br><b>{format_brl(tot_rec_outras)}</b><br>({pct_outras:.1%})",    # 2
+            f"RECEITA TOTAL<br><b>{format_brl(total_receita)}</b><br>(100%)",               # 3
+            f"Sênior<br><b>{format_brl(tot_senior)}</b><br>({pct_senior:.1%})",             # 4
+            f"Mezzanino<br><b>{format_brl(tot_mezz)}</b><br>({pct_mezz:.1%})",            # 5
+            f"PDD (Risco)<br><b>{format_brl(tot_pdd)}</b><br>({pct_pdd:.1%})",           # 6
+            f"Taxas/Desp.<br><b>{format_brl(tot_taxas)}</b><br>({pct_taxas:.1%})",         # 7
+            f"Lucro Júnior<br><b>{format_brl(tot_junior)}</b><br>({pct_junior:.1%})"        # 8
+        ]
+        
+        # Cores dos Nós (Levemente ajustadas para contraste com texto preto)
+        color_nodes = [
+            "#5DADE2", # Carteira (Azul Claro)
+            "#BDC3C7", # Caixa (Cinza Claro)
+            "#AF7AC5", # Outras (Roxo Claro)
+            "#2E4053", # TOTAL (Escuro)
+            "#58D68D", # Sênior (Verde Claro)
+            "#F5B041", # Mezz (Laranja Claro)
+            "#EC7063", # PDD (Vermelho Claro)
+            "#AAB7B8", # Taxas (Cinza Médio)
+            "#3498db"  # Júnior (Azul Forte)
+        ]
+
+        # 3. Configurar Fluxos
+        source_indices = [0, 1, 2, 3, 3, 3, 3, 3]
+        target_indices = [3, 3, 3, 4, 5, 6, 7, 8]
+        values_list = [
+            tot_rec_cart, tot_rec_caixa, tot_rec_outras,
+            tot_senior, tot_mezz, tot_pdd, tot_taxas, tot_junior
+        ]
+        
+        # Cores dos Links (Combinando com a origem/destino)
+        color_links = [
+            "rgba(93, 173, 226, 0.4)", # Azul
+            "rgba(189, 195, 199, 0.4)", # Cinza
+            "rgba(175, 122, 197, 0.4)", # Roxo
+            "rgba(88, 214, 141, 0.4)",  # Verde
+            "rgba(245, 176, 65, 0.4)",  # Laranja
+            "rgba(236, 112, 99, 0.4)",  # Vermelho
+            "rgba(170, 183, 184, 0.4)", # Cinza
+            "rgba(52, 152, 219, 0.6)"   # Azul Forte
+        ]
+
+        fig_sankey = go.Figure(data=[go.Sankey(
+            textfont=dict(size=12, color="black", family="Arial"), # Força fonte preta
+            node=dict(
+                pad=25,
+                thickness=25,
+                line=dict(color="gray", width=0.5),
+                label=label_list,
+                color=color_nodes,
+                hovertemplate='%{label}<extra></extra>' # Tooltip limpo
+            ),
+            link=dict(
+                source=source_indices,
+                target=target_indices,
+                value=values_list,
+                color=color_links,
+                hovertemplate='Valor: R$ %{value:,.2f}<extra></extra>'
+            )
+        )])
+
+        fig_sankey.update_layout(
+            title_text="Mapa de Fluxo Financeiro (Composição %)",
+            font_size=13,
+            height=600, # Aumentei a altura para dar espaço aos textos
+            margin=dict(l=20, r=20, t=50, b=20)
+        )
+        
+        st.plotly_chart(fig_sankey, use_container_width=True)
+        
+    else:
+        st.info("Gere uma simulação com receita positiva para visualizar o fluxo financeiro.")
