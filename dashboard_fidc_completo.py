@@ -10,32 +10,41 @@ st.set_page_config(
     layout="wide"
 )
 
-# Ajuste visual nos cards de métricas
+                                # Ajuste visual nos cards de métricas e layout
 st.markdown(
     """
     <style>
-    div[data-testid="stMetric"] > label {
+    /* Títulos dos Cards */
+    div[data-testid="stMetricLabel"] > label {
         font-size: 0.85rem;
         font-weight: 600;
+        color: #555;
     }
-    div[data-testid="stMetric"] > div {
-        font-size: 1.4rem;
+    
+    /* Valores dos Cards (Evita corte em telas divididas) */
+    div[data-testid="stMetricValue"] {
+        font-size: 1.2rem !important; /* Reduzi levemente */
         font-weight: 700;
+        word-wrap: break-word;       /* Quebra linha se necessário */
+        white-space: normal !important; /* Impede o corte (...) */
+        line-height: 1.2;
     }
-    /* Cards com bordas e sombras */
+
+    /* Estilo do Card (Borda e Sombra) */
     div[data-testid="stMetric"] {
         background-color: #f8f9fa;
-        padding: 15px;
-        border-radius: 10px;
+        padding: 10px;
+        border-radius: 8px;
         border: 1px solid #e0e0e0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    /* Títulos de seções */
+    
+    /* Cabeçalhos de Seção */
     .section-header {
         background: linear-gradient(90deg, #2c3e50 0%, #3498db 100%);
         color: white;
-        padding: 12px 20px;
-        border-radius: 8px;
+        padding: 10px 15px;
+        border-radius: 6px;
         margin: 20px 0 15px 0;
         font-size: 1.1rem;
         font-weight: 600;
@@ -474,19 +483,17 @@ perda_lim_sub_pct_recebiveis = (
 tab_estrutura, tab_risco, tab_alvo, tab_dre = st.tabs([
     "📊 Estrutura & P&L",
     "🛡️ Gestão de Risco & Stress Test", # Aba unificada
-    "🎯 Análise de Sensibilidade",
+    "🎯 Taxa de Juros & Simulações",
     "📑 DRE Projetado"
 ])
 
 # -------------------------------------------------------------------
-# ABA 1 – ESTRUTURA & P&L
+# ABA 1 – ESTRUTURA & P&L (Ajustado: Card de Captação + Waterfall Mensal)
 # -------------------------------------------------------------------
 with tab_estrutura:
     st.markdown('<div class="section-header">🏗️ Estrutura de Capital</div>', unsafe_allow_html=True)
 
     # 1. Preparar os dados na ordem correta (Sênior -> Mezz -> Júnior)
-    # A Sênior tem prioridade, então fica no topo. A Júnior é o alicerce, fica na base.
-    
     dados_estrutura = [
         ["Sênior", valor_senior, valor_senior / pl_total if pl_total > 0 else 0, "#D1E7DD"], # Verde claro
         ["Mezzanino", valor_mezz, valor_mezz / pl_total if pl_total > 0 else 0, "#FFF3CD"],  # Amarelo claro
@@ -506,7 +513,7 @@ with tab_estrutura:
         fig_table = go.Figure(data=[go.Table(
             header=dict(
                 values=['<b>Classe</b>', '<b>Valor (R$)</b>', '<b>Participação (%)</b>'],
-                fill_color='#2c3e50', # Azul escuro corporativo
+                fill_color='#2c3e50',
                 align='left',
                 font=dict(color='white', size=14),
                 height=35
@@ -517,7 +524,7 @@ with tab_estrutura:
                     [format_brl(v) for v in df_struct.Valor], 
                     [f"{p*100:.2f}%" for p in df_struct.Perc]
                 ],
-                fill_color=[df_struct.Color], # Cores de fundo condicionais (Sênior safe, Jr risk)
+                fill_color=[df_struct.Color],
                 align='left',
                 font=dict(color='black', size=13),
                 height=30
@@ -525,27 +532,23 @@ with tab_estrutura:
         )])
         
         fig_table.update_layout(
-            margin=dict(l=0, r=0, t=0, b=0),
-            height=160
+            margin=dict(l=0, r=0, t=50, b=0), 
+            height=200
         )
         st.plotly_chart(fig_table, use_container_width=True)
 
     with c_viz:
-        # Gráfico de Pilha (Stacked Bar) para ver o "Colchão" visualmente
+        # Gráfico de Pilha (Stacked Bar)
         fig_stack = go.Figure()
         
-        # Adicionamos na ordem inversa para empilhar visualmente: Jr em baixo, Sênior em cima
-        # Júnior (Base)
         fig_stack.add_trace(go.Bar(
             name='Júnior', x=['FIDC'], y=[valor_junior], 
             marker_color='#e74c3c', text=f"{df_struct.iloc[2]['Perc']*100:.0f}%", textposition='auto'
         ))
-        # Mezzanino (Meio)
         fig_stack.add_trace(go.Bar(
             name='Mezzanino', x=['FIDC'], y=[valor_mezz], 
             marker_color='#f1c40f', text=f"{df_struct.iloc[1]['Perc']*100:.0f}%", textposition='auto'
         ))
-        # Sênior (Topo)
         fig_stack.add_trace(go.Bar(
             name='Sênior', x=['FIDC'], y=[valor_senior], 
             marker_color='#27ae60', text=f"{df_struct.iloc[0]['Perc']*100:.0f}%", textposition='auto'
@@ -554,82 +557,84 @@ with tab_estrutura:
         # LINHA TRACEJADA DO MÍNIMO DE SUBORDINAÇÃO
         subordinacao_minima_valor = pl_total * sub_min
         fig_stack.add_shape(
-            type="line",
-            x0=-0.4, x1=0.4,
+            type="line", x0=-0.4, x1=0.4,
             y0=subordinacao_minima_valor, y1=subordinacao_minima_valor,
             line=dict(color="white", width=2, dash="dash")
         )
         
-        # Legenda abaixo do gráfico
         fig_stack.add_annotation(
-            x=0.5, y=-0.12,               # abaixo da barra
-            xref="paper", yref="paper",   # ref. relativa ao container
+            x=0.5, y=-0.15, xref="paper", yref="paper",
             text=f"Mín. Subordinação ({sub_min_pct:.1f}%)",
-            showarrow=False,
-            font=dict(size=12, color="red"),
-            align="center"
+            showarrow=False, font=dict(size=11, color="red"), align="center"
         )
-
 
         fig_stack.update_layout(
             barmode='stack',
             showlegend=True,
-            margin=dict(l=20, r=20, t=50, b=20),
+            margin=dict(l=20, r=20, t=50, b=20), 
             height=280,
             xaxis=dict(visible=False),
             yaxis=dict(visible=False),
-            legend=dict(orientation="h", y=-0.15, x=0.5, xanchor='center')
+            legend=dict(orientation="h", y=-0.2, x=0.5, xanchor='center')
         )
         st.plotly_chart(fig_stack, use_container_width=True)
 
     st.markdown("---")
+    
+    # CARDS DE INFORMAÇÕES FINANCEIRAS
     st.markdown('<div class="section-header">💰 Informações Financeiras</div>', unsafe_allow_html=True)
 
-    # Regra de enquadramento: mínimo 67% do PL em recebíveis
     min_recebiveis_regra = pl_total * 0.67
     
-    # 1. Taxa média BRUTA do PL (a.m.):
-    #    Ponderação: % Recebíveis * Taxa Carteira + % Caixa * Taxa CDI
+    # Taxas
     taxa_media_pl_am = pct_recebiveis * taxa_carteira_am + (1 - pct_recebiveis) * cdi_am
-    
-    # 2. Impacto da PDD no PL (a.m.):
-    #    Transformamos o custo diário da PDD em custo mensal (x21) e dividimos pelo PL
     impacto_pdd_pl_am = (pdd_dia * 21) / pl_total if pl_total > 0 else 0.0
-    
-    # 3. Taxa média LÍQUIDA de PDD (a.m.):
     taxa_media_pl_am_liq = taxa_media_pl_am - impacto_pdd_pl_am
     
-    col1, col2, col3, col4 = st.columns(4)
+    # --- CÁLCULO DE CAPTAÇÃO DISPONÍVEL ---
+    # Quanto o PL Total pode crescer mantendo a Júnior atual fixa, até bater no Sub_Min?
+    # PL_Max = Valor_Junior / Sub_Min
+    # Captação_Disp = PL_Max - PL_Atual
+    if sub_min > 0:
+        pl_max_teorico = valor_junior / sub_min
+        captacao_disponivel = pl_max_teorico - pl_total
+    else:
+        captacao_disponivel = 0.0
     
-    # Situação atual
-    col1.metric(
-        "Alocação em Recebíveis",
-        format_brl(valor_recebiveis),
-        f"{pct_recebiveis*100:.0f}% do PL"
-    )
-    col2.metric(
-        "Caixa (a CDI)",
-        format_brl(valor_caixa),
-        f"{(1 - pct_recebiveis)*100:.0f}% do PL"
-    )
+    # AGORA SÃO 5 COLUNAS
+    col1, col2, col3, col4, col5 = st.columns(5)
     
-    # Regra de 67% em recebíveis
-    col3.metric(
-        "Mínimo em Recebíveis",
-        format_brl(min_recebiveis_regra),
-        "67% do PL",
-        delta_color="inverse" 
-    )
+    col1.metric("Alocação em Recebíveis", format_brl(valor_recebiveis), f"{pct_recebiveis*100:.0f}% do PL")
+    col2.metric("Caixa (a CDI)", format_brl(valor_caixa), f"{(1 - pct_recebiveis)*100:.0f}% do PL")
+    col3.metric("Mínimo em Recebíveis", format_brl(min_recebiveis_regra), "67% do PL", delta_color="inverse")
 
-    # Taxa média ponderada do PL (ao mês) com visão Líquida no Delta
     col4.metric(
         "Taxa média do PL (a.m.)",
         f"{taxa_media_pl_am*100:.2f}%",
-        delta=f"Líq. de PDD: {taxa_media_pl_am_liq*100:.2f}%", # AQUI ESTÁ A MUDANÇA
-        delta_color="off", # 'off' deixa cinza (neutro), ou use 'normal' para verde/vermelho
+        delta=f"Líq. de PDD: {taxa_media_pl_am_liq*100:.2f}%", 
+        delta_color="off", 
         help="A taxa principal é bruta. O valor menor abaixo já desconta o custo da PDD mensal."
     )
     
+    # NOVO CARD 5: CAPTAÇÃO DISPONÍVEL
+    lbl_cap = "Captação Disp. (Sênior/Mezz)"
+    val_cap = format_brl(captacao_disponivel)
+    
+    if captacao_disponivel >= 0:
+        delta_cap = "Espaço para crescer"
+        cor_cap = "normal" # Verde
+    else:
+        delta_cap = "Desenquadrado"
+        cor_cap = "inverse" # Vermelho
+        
+    col5.metric(
+        lbl_cap, 
+        val_cap, 
+        delta=delta_cap, 
+        delta_color=cor_cap,
+        help="Quanto o fundo pode captar de cotas Sênior/Mezzanino mantendo a Subordinação Mínima atual."
+    )
+
     st.markdown("---")
     st.markdown('<div class="section-header">📊 P&L Diário do Fundo</div>', unsafe_allow_html=True)
     
@@ -663,7 +668,7 @@ with tab_estrutura:
         st.metric("Resultado da Cota Júnior (dia)", format_brl(resultado_junior_dia))
     
     
-    # Retornos mensais projetados a partir do anual (equivalência em 12 meses)
+    # Retornos mensais projetados
     retorno_mensal_junior  = (1 + retorno_anualizado_junior) ** (1/12) - 1
     retorno_mensal_mezz    = (1 + retorno_anualizado_mezz)   ** (1/12) - 1
     retorno_mensal_senior  = (1 + retorno_anualizado_senior) ** (1/12) - 1
@@ -692,9 +697,8 @@ with tab_estrutura:
         st.metric("Retorno Anualizado da Cota Sênior", format_pct(retorno_anualizado_senior))
     
 
-    st.markdown("---")
     # -----------------------------
-    # WATERFALL - Escolha Dia ou Ano
+    # WATERFALL - Escolha Dia/Mês/Ano
     # -----------------------------
     st.markdown("---")
     st.markdown(
@@ -702,14 +706,20 @@ with tab_estrutura:
         unsafe_allow_html=True,
     )
     
-    
+    # MUDANÇA AQUI: ADICIONADO 'MENSAL'
     modo_wf = st.radio(
         "Visualizar Waterfall por:",
-        ["Diário", "Anual"],
+        ["Diário", "Mensal", "Anual"],
         horizontal=True
     )
     
-    fator = 1 if modo_wf == "Diário" else 252
+    # DEFINIÇÃO DOS FATORES
+    if modo_wf == "Diário":
+        fator = 1
+    elif modo_wf == "Mensal":
+        fator = 21 # Convenção de dias úteis
+    else:
+        fator = 252
     
     # Ajustar valores conforme o período
     rec_carteira = receita_carteira_dia * fator
@@ -765,31 +775,25 @@ with tab_estrutura:
         orientation="v",
         measure=measures_wf,
         x=labels_wf,
+        y=values_wf,
+        text=[format_brl(v) for v in values_wf],
         textposition="outside",
-        y=values_wf,
-        connector={"line": {"color": "rgb(63,63,63)"}}
-    ))
-    
-    fig_wf = go.Figure(go.Waterfall(
-        name="waterfall",
-        orientation="v",
-        measure=measures_wf,
-        x=labels_wf,
-        y=values_wf,
-        text=[format_brl(v) for v in values_wf],   # <<< AQUI: textos dos valores
-        textposition="outside",                    # mostra os textos para fora das barras
         connector={"line": {"color": "rgb(63,63,63)"}}
     ))
     
     fig_wf.update_layout(
-        margin=dict(l=40, r=40, t=90, b=40),  # aumenta margem superior
-        yaxis=dict(automargin=True)
+        title={
+            'text': f"Waterfall do Resultado ({modo_wf})",
+            'y': 0.95, 'x': 0.5, 'xanchor': 'center'
+        },
+        margin=dict(l=40, r=40, t=100, b=40),
+        yaxis=dict(automargin=True),
+        height=500
     )
     
-        
     st.plotly_chart(fig_wf, use_container_width=True)
-
-
+    
+    
 # -------------------------------------------------------------------
 # ABA 2 – GESTÃO DE RISCO & STRESS TEST (UNIFICADA E CORRIGIDA)
 # -------------------------------------------------------------------
@@ -1069,7 +1073,7 @@ with tab_risco:
 # ABA 3 – ANÁLISE DE SENSIBILIDADE E SIMULAÇÃO (VERSÃO FINAL DEFINITIVA)
 # -------------------------------------------------------------------
 with tab_alvo:
-    st.markdown('<div class="section-header">🎯 Análise de Sensibilidade e Simulação</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">🎯 Taxa de Juros & Simulações</div>', unsafe_allow_html=True)
     
     # Variáveis de apoio (Padronização)
     pct_caixa_aplicado_atual = 1.0 
@@ -1765,30 +1769,31 @@ with tab_dre:
     )
 
     # ---------------------------
-    # GRÁFICOS RESUMO (incluindo PDD)
+    # GRÁFICOS RESUMO
     # ---------------------------
     st.markdown("---")
-    st.markdown("#### Visão gráfica")
+    st.markdown("#### Visão Gráfica dos Resultados")
 
     col_g1, col_g2 = st.columns(2)
 
-    # 1) Evolução do PL + PDD
+    # 1) Evolução do PL + PDD (REVERTIDO AO ORIGINAL)
     with col_g1:
-        st.markdown("**Evolução do PL Final (Total e Júnior) + PDD mensal**")
+        st.markdown("**Evolução do PL Final (Sênior/Mezz e Júnior)**")
         fig_pl = go.Figure()
 
+        # Original: PL Final aqui representa Sênior + Mezzanino (conforme seu cálculo no loop)
         fig_pl.add_trace(go.Scatter(
             x=df_dre_mensal["Mês"],
-            y=df_dre_mensal["PL Final (R$)"],
+            y=df_dre_mensal["PL Final (R$)"], 
             mode="lines+markers",
-            name="PL Final Total",
+            name="PL Sênior + Mezz", # Ajustei o nome para ficar claro
             yaxis="y1"
         ))
         fig_pl.add_trace(go.Scatter(
             x=df_dre_mensal["Mês"],
             y=df_dre_mensal["PL Final Júnior (R$)"],
             mode="lines+markers",
-            name="PL Final Júnior",
+            name="PL Júnior",
             yaxis="y1"
         ))
         # PDD em eixo secundário
@@ -1804,26 +1809,21 @@ with tab_dre:
             height=380,
             xaxis=dict(title="Mês"),
             yaxis=dict(title="PL (R$)", side="left"),
-            yaxis2=dict(
-                title="PDD (R$)",
-                overlaying="y",
-                side="right",
-                showgrid=False
-            ),
+            yaxis2=dict(title="PDD (R$)", overlaying="y", side="right", showgrid=False),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
             barmode="overlay",
             margin=dict(l=50, r=50, t=40, b=40)
         )
         st.plotly_chart(fig_pl, use_container_width=True)
 
-    # 2) Retorno da Júnior + PDD em % do PL Júnior
+    # 2) Retorno da Júnior + PDD em % do PL Júnior (MANTIDO ORIGINAL)
     with col_g2:
         st.markdown("**Retorno da Cota Júnior e peso da PDD**")
 
         # PDD como % do PL Júnior após movimentos
         pdd_pct_sobre_junior = []
         for i, row in df_dre_mensal.iterrows():
-            base_j = row["PL Final Júnior (R$)"] - row["Resultado Cota Júnior (R$)"]  # aprox base = PL após movimentos
+            base_j = row["PL Final Júnior (R$)"] - row["Resultado Cota Júnior (R$)"]  # aprox base
             if base_j != 0:
                 pdd_pct_sobre_junior.append(row["PDD (R$)"] / base_j * 100)
             else:
@@ -1848,26 +1848,110 @@ with tab_dre:
             yaxis="y2"
         ))
 
-        fig_ret.add_hline(
-            y=0,
-            line_dash="dash",
-            line_color="gray",
-            yref="y1"
-        )
+        fig_ret.add_hline(y=0, line_dash="dash", line_color="gray", yref="y1")
 
         fig_ret.update_layout(
             height=380,
-            xaxis_title="Mês",
+            xaxis=dict(title="Mês"),
             yaxis=dict(title="Retorno Júnior no mês (%)", side="left"),
-            yaxis2=dict(
-                title="PDD / PL Júnior (%)",
-                overlaying="y",
-                side="right",
-                showgrid=False
-            ),
+            yaxis2=dict(title="PDD / PL Júnior (%)", overlaying="y", side="right", showgrid=False),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
             margin=dict(l=50, r=50, t=40, b=40)
         )
         st.plotly_chart(fig_ret, use_container_width=True)
+
+    # ---------------------------
+    # 3) GRÁFICO DE CAPACIDADE DE CAPTAÇÃO (CORRIGIDO SÓ AQUI)
+    # ---------------------------
+    st.markdown("---")
+    st.markdown("#### Capacidade de Captação (Headroom) vs. Subordinação")
+    st.caption(
+        "**Barras Verdes:** Valor financeiro disponível para captar em cotas Sênior/Mezz sem desenquadrar.\n"
+        "**Barras Vermelhas:** Excesso de captação (Necessidade de Resgate ou Aporte na Júnior)."
+    )
+    
+    # Recálculo Correto dos Indicadores PARA ESTE GRÁFICO
+    subordinacao_real = []
+    headroom_list = []
+    
+    for i, row in df_dre_mensal.iterrows():
+        # CORREÇÃO MATEMÁTICA CRÍTICA (Só para este gráfico):
+        # PL Total Real = (PL Senior + PL Mezz) + PL Junior
+        pl_tot_real = row["PL Final (R$)"] + row["PL Final Júnior (R$)"]
+        pl_jr_mes = row["PL Final Júnior (R$)"]
+        
+        # 1. Subordinação Real (%)
+        sub_real = (pl_jr_mes / pl_tot_real * 100) if pl_tot_real > 0 else 0
+        subordinacao_real.append(sub_real)
+        
+        # 2. Headroom (R$)
+        # PL_Total_Maximo = PL_Junior / Sub_Minima
+        # Espaço = PL_Total_Maximo - PL_Total_Atual
+        if sub_min > 0:
+            pl_max_permitido = pl_jr_mes / sub_min
+            espaco = pl_max_permitido - pl_tot_real
+        else:
+            espaco = 0
+        headroom_list.append(espaco)
+
+    fig_cap = go.Figure()
+
+    # Barras: Headroom (Eixo Y1 - R$)
+    colors_cap = ['#27ae60' if v >= 0 else '#c0392b' for v in headroom_list]
+    
+    fig_cap.add_trace(go.Bar(
+        x=df_dre_mensal["Mês"],
+        y=headroom_list,
+        name="Capacidade (R$)",
+        marker_color=colors_cap,
+        text=[format_brl(v) for v in headroom_list],
+        # textposition="auto", # Opcional: pode poluir se tiver muitas barras
+        yaxis="y1",
+        opacity=0.7
+    ))
+
+    fig_cap.add_trace(go.Scatter(
+        x=df_dre_mensal["Mês"],
+        y=subordinacao_real,
+        name="Subordinação Real (%)",
+        mode="lines+markers+text", # <--- ADICIONADO +text
+        text=[f"{v:.1f}%" for v in subordinacao_real], # <--- VALORES FORMATADOS
+        textposition="top center", # <--- POSIÇÃO DO TEXTO
+        line=dict(width=3, color="#2c3e50"),
+        marker=dict(size=8, color="white", line=dict(width=2, color="#2c3e50")),
+        yaxis="y2"
+    ))
+
+    # Linha Zero Reforçada (Eixo Y1)
+    fig_cap.add_hline(y=0, line_color="black", line_width=1.5, yref="y1")
+    
+    fig_cap.update_layout(
+        title="Capacidade de Captação e Enquadramento",
+        height=450,
+        xaxis=dict(title="Mês"),
+        
+        # Eixo Y1: Dinheiro
+        yaxis=dict(
+            title="Capacidade de Captação (R$)", 
+            side="left",
+            showgrid=False, 
+            zeroline=False
+        ),
+        
+        # Eixo Y2: Porcentagem
+        yaxis2=dict(
+            title="Índice de Subordinação (%)", 
+            overlaying="y", 
+            side="right", 
+            showgrid=True,
+            gridcolor='lightgray',
+            # Truque de range para não cortar a linha e alinhar visualmente o zero se possível
+            range=[0, max(max(subordinacao_real), sub_min_pct) * 1.4]
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+        margin=dict(l=50, r=50, t=50, b=40)
+    )
+
+    st.plotly_chart(fig_cap, use_container_width=True)
 
 
