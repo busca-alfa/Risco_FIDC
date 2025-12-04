@@ -10,23 +10,23 @@ st.set_page_config(
     layout="wide"
 )
 
-                                # Ajuste visual nos cards de métricas e layout
+
 st.markdown(
     """
     <style>
-    /* Títulos dos Cards */
+    /* Ajuste do título do card (Label) */
     div[data-testid="stMetricLabel"] > label {
         font-size: 0.85rem;
         font-weight: 600;
         color: #555;
     }
     
-    /* Valores dos Cards (Evita corte em telas divididas) */
+    /* Ajuste do valor do card (Número) */
     div[data-testid="stMetricValue"] {
-        font-size: 1.2rem !important; /* Reduzi levemente */
+        font-size: 1.2rem !important; /* Reduzi levemente para caber melhor */
         font-weight: 700;
-        word-wrap: break-word;       /* Quebra linha se necessário */
-        white-space: normal !important; /* Impede o corte (...) */
+        word-wrap: break-word;       /* Permite quebrar linha se for muito longo */
+        white-space: normal !important; /* OBRIGA a quebra de linha e impede o corte (...) */
         line-height: 1.2;
     }
 
@@ -1861,32 +1861,26 @@ with tab_dre:
         st.plotly_chart(fig_ret, use_container_width=True)
 
     # ---------------------------
-    # 3) GRÁFICO DE CAPACIDADE DE CAPTAÇÃO (CORRIGIDO SÓ AQUI)
+    # 3) GRÁFICO DE CAPACIDADE DE CAPTAÇÃO (VISUAL LIMPO "SMART LABELS")
     # ---------------------------
     st.markdown("---")
     st.markdown("#### Capacidade de Captação (Headroom) vs. Subordinação")
     st.caption(
-        "**Barras Verdes:** Valor financeiro disponível para captar em cotas Sênior/Mezz sem desenquadrar.\n"
-        "**Barras Vermelhas:** Excesso de captação (Necessidade de Resgate ou Aporte na Júnior)."
+        "**Barras:** Volume financeiro disponível para captação (Verde) ou Excesso/Desenquadramento (Vermelho).\n"
+        "**Linha Azul:** Índice de Subordinação Real."
     )
     
-    # Recálculo Correto dos Indicadores PARA ESTE GRÁFICO
+    # Recálculo Correto dos Indicadores
     subordinacao_real = []
     headroom_list = []
     
     for i, row in df_dre_mensal.iterrows():
-        # CORREÇÃO MATEMÁTICA CRÍTICA (Só para este gráfico):
-        # PL Total Real = (PL Senior + PL Mezz) + PL Junior
         pl_tot_real = row["PL Final (R$)"] + row["PL Final Júnior (R$)"]
         pl_jr_mes = row["PL Final Júnior (R$)"]
         
-        # 1. Subordinação Real (%)
         sub_real = (pl_jr_mes / pl_tot_real * 100) if pl_tot_real > 0 else 0
         subordinacao_real.append(sub_real)
         
-        # 2. Headroom (R$)
-        # PL_Total_Maximo = PL_Junior / Sub_Minima
-        # Espaço = PL_Total_Maximo - PL_Total_Atual
         if sub_min > 0:
             pl_max_permitido = pl_jr_mes / sub_min
             espaco = pl_max_permitido - pl_tot_real
@@ -1894,40 +1888,93 @@ with tab_dre:
             espaco = 0
         headroom_list.append(espaco)
 
+    # Função auxiliar para formatar números curtos (ex: 15.2M, 500k)
+    def human_format(num):
+        num = float('{:.3g}'.format(num))
+        magnitude = 0
+        while abs(num) >= 1000:
+            magnitude += 1
+            num /= 1000.0
+        return '{}{}'.format('{:f}'.format(num).rstrip('0').rstrip('.'), ['', 'k', 'M', 'B', 'T'][magnitude])
+
     fig_cap = go.Figure()
 
     # Barras: Headroom (Eixo Y1 - R$)
     colors_cap = ['#27ae60' if v >= 0 else '#c0392b' for v in headroom_list]
+    
+    # Texto das barras abreviado (ex: "15M")
+    text_barras = [human_format(v) for v in headroom_list]
     
     fig_cap.add_trace(go.Bar(
         x=df_dre_mensal["Mês"],
         y=headroom_list,
         name="Capacidade (R$)",
         marker_color=colors_cap,
-        text=[format_brl(v) for v in headroom_list],
-        # textposition="auto", # Opcional: pode poluir se tiver muitas barras
+        text=text_barras,          # Texto curto visual
+        textposition="auto",       # Plotly decide se põe dentro ou fora
+        textfont=dict(size=11, color="white"), # Texto branco para contraste nas barras coloridas
+        hovertemplate="Mês: %{x}<br>Capacidade: R$ %{y:,.2f}<extra></extra>", # Tooltip completo
         yaxis="y1",
-        opacity=0.7
+        opacity=0.85
     ))
 
+    # Linha: Índice de Subordinação Real (Eixo Y2 - %)
     fig_cap.add_trace(go.Scatter(
         x=df_dre_mensal["Mês"],
         y=subordinacao_real,
         name="Subordinação Real (%)",
-        mode="lines+markers+text", # <--- ADICIONADO +text
-        text=[f"{v:.1f}%" for v in subordinacao_real], # <--- VALORES FORMATADOS
-        textposition="top center", # <--- POSIÇÃO DO TEXTO
+        mode="lines+markers+text",
+        text=[f"{v:.1f}%" for v in subordinacao_real],
+        textposition="top center",
+        textfont=dict(size=12, color="#2c3e50", family="Arial Black"), # Fonte mais grossa e escura
         line=dict(width=3, color="#2c3e50"),
-        marker=dict(size=8, color="white", line=dict(width=2, color="#2c3e50")),
+        marker=dict(size=9, color="white", line=dict(width=2, color="#2c3e50")),
+        hovertemplate="Mês: %{x}<br>Subordinação: %{y:.2f}%<extra></extra>",
         yaxis="y2"
     ))
 
-    # Linha Zero Reforçada (Eixo Y1)
-    fig_cap.add_hline(y=0, line_color="black", line_width=1.5, yref="y1")
+    # Linha Tracejada: Subordinação Mínima (Eixo Y2)
+    fig_cap.add_hline(
+        y=sub_min_pct, 
+        line_dash="dash", 
+        line_color="#c0392b", 
+        annotation_text=f"Mín: {sub_min_pct:.0f}%",
+        annotation_font=dict(color="#c0392b", size=10),
+        annotation_position="top right",
+        yref="y2"
+    )
     
+    # Linha Zero Reforçada
+    fig_cap.add_hline(y=0, line_color="black", line_width=1, yref="y1")
+
+    # Cálculo de Ranges para Sincronia Visual
+    max_y1 = max(max(headroom_list, default=0), 0)
+    min_y1 = min(min(headroom_list, default=0), 0)
+    max_y2 = max(max(subordinacao_real, default=0), sub_min_pct)
+    
+    # Ajustando limites para o texto não cortar
+    val_pos_max = max(1000.0, max_y1)
+    val_neg_max = abs(min(-1000.0, min_y1))
+    
+    # Define a proporção visual baseada no limite mínimo
+    # Se o limite é 20%, queremos que a linha de 0 R$ esteja visualmente nos 20% da altura do gráfico
+    # Isso é difícil de garantir perfeitamente responsivo, então vamos dar folga nos eixos.
+    
+    range_y2 = [0, max(40.0, max_y2 * 1.35)] # Folga generosa no topo para o texto da linha
+    
+    # Range Y1 calculado para tentar manter a proporção
+    ratio_limit = sub_min_pct / range_y2[1] 
+    h_req1 = val_pos_max / (1 - ratio_limit)
+    h_req2 = val_neg_max / ratio_limit
+    total_height_y1 = max(h_req1, h_req2) * 1.2
+    
+    y1_top = total_height_y1 * (1 - ratio_limit)
+    y1_bottom = - (total_height_y1 * ratio_limit)
+    range_y1 = [y1_bottom, y1_top]
+
     fig_cap.update_layout(
-        title="Capacidade de Captação e Enquadramento",
-        height=450,
+        title="Headroom de Captação e Enquadramento",
+        height=480, # Um pouco mais alto para caber tudo
         xaxis=dict(title="Mês"),
         
         # Eixo Y1: Dinheiro
@@ -1935,7 +1982,8 @@ with tab_dre:
             title="Capacidade de Captação (R$)", 
             side="left",
             showgrid=False, 
-            zeroline=False
+            zeroline=False,
+            range=range_y1
         ),
         
         # Eixo Y2: Porcentagem
@@ -1944,14 +1992,17 @@ with tab_dre:
             overlaying="y", 
             side="right", 
             showgrid=True,
-            gridcolor='lightgray',
-            # Truque de range para não cortar a linha e alinhar visualmente o zero se possível
-            range=[0, max(max(subordinacao_real), sub_min_pct) * 1.4]
+            gridcolor='#eeeeee',
+            range=range_y2
         ),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
-        margin=dict(l=50, r=50, t=50, b=40)
+        
+        legend=dict(
+            orientation="h", 
+            yanchor="top", y=-0.15, 
+            xanchor="center", x=0.5,
+            font=dict(color="black")
+        ),
+        margin=dict(l=50, r=50, t=60, b=60)
     )
 
     st.plotly_chart(fig_cap, use_container_width=True)
-
-
