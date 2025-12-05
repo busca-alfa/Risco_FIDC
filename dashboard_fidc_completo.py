@@ -215,7 +215,6 @@ outros_custos_mensais = st.sidebar.number_input(
 # Aproximação: 12 meses ~ 252 dias úteis
 custo_outros_dia = outros_custos_mensais * 12.0 / 252.0
 
-# Outras receitas mensais (ex.: rebate, serviços, consultoria)
 outros_receitas_mensais = st.sidebar.number_input(
     "Outras receitas (R$ / mês)",
     min_value=0.0,
@@ -224,7 +223,6 @@ outros_receitas_mensais = st.sidebar.number_input(
     format="%.2f"
 )
 receita_outros_dia = outros_receitas_mensais * 12.0 / 252.0
-
 
 st.sidebar.markdown("---")
 
@@ -344,22 +342,23 @@ incluir_pdd = st.sidebar.checkbox(
 # -------------------------------------------------------------------
 # Alocação em recebíveis e caixa
 valor_recebiveis = pl_total * pct_recebiveis
-valor_caixa = pl_total - valor_recebiveis
+valor_caixa      = pl_total - valor_recebiveis
 
-# Receitas
-receita_carteira_dia = valor_recebiveis * taxa_carteira_diaria
-receita_caixa_dia    = valor_caixa      * cdi_diario
-receita_financeira_dia = receita_carteira_dia + receita_caixa_dia
-receita_total_dia      = receita_financeira_dia + receita_outros_dia
+# Receitas com a taxa atual (para P&L e DRE)
+receita_carteira_dia     = valor_recebiveis * taxa_carteira_diaria
+receita_caixa_dia        = valor_caixa      * cdi_diario
+receita_financeira_dia   = receita_carteira_dia + receita_caixa_dia
+receita_total_dia        = receita_financeira_dia + receita_outros_dia
 
 # Custos das cotas
 custo_senior_dia = valor_senior * taxa_senior_diaria
 custo_mezz_dia   = valor_mezz   * taxa_mezz_diaria
 
-# Taxas
+# Taxas adm / gestão
 custo_adm_dia    = pl_total * taxa_adm_diaria
 custo_gestao_dia = pl_total * taxa_gestao_diaria
 
+# --- PDD ---
 prov_rates = np.array([
     prov_0_30, prov_31_60, prov_61_90, prov_91_120, prov_121_150,
     prov_151_180, prov_181_240, prov_241_300, prov_300p
@@ -367,7 +366,44 @@ prov_rates = np.array([
 
 taxa_perda_esperada = float(np.sum(buckets_pct_norm * prov_rates))
 pdd_base = valor_recebiveis * taxa_perda_esperada
-pdd_dia = pdd_base / 252.0 if incluir_pdd else 0.0
+pdd_dia  = pdd_base / 252.0 if incluir_pdd else 0.0
+
+# -------------------------------------------------------------------
+# CUSTOS TOTAIS & TAXA MÍNIMA DA CARTEIRA (break-even da Júnior)
+# -------------------------------------------------------------------
+
+dias_uteis_ano = 252
+dias_uteis_mes = dias_uteis_ano / 12  # ~21 dias úteis
+
+# 1) Custos FIXOS por dia (não dependem da taxa da carteira)
+custos_fixos_dia = (
+    custo_senior_dia
+    + custo_mezz_dia
+    + custo_adm_dia
+    + custo_gestao_dia
+    + custo_outros_dia
+)
+
+# 2) Receitas FIXAS por dia (não dependem da taxa da carteira)
+#    = caixa a CDI + outras receitas
+receitas_fixas_dia = receita_caixa_dia + receita_outros_dia
+
+if valor_recebiveis > 0:
+    # Equação do break-even da Júnior (resultado_liquido_dia = 0):
+    #   R * r_min + receitas_fixas_dia - (custos_fixos_dia + pdd_dia) = 0
+    # => r_min = (custos_fixos_dia + pdd_dia - receitas_fixas_dia) / R
+    numerador_dia = custos_fixos_dia + pdd_dia - receitas_fixas_dia
+
+    taxa_carteira_min_diaria = numerador_dia / valor_recebiveis
+    # Se der negativa, significa que mesmo com taxa 0 já sobra dinheiro pra Júnior
+    taxa_carteira_min_diaria = max(0.0, taxa_carteira_min_diaria)
+
+    # Converte taxa diária mínima em taxa mensal equivalente (composta)
+    taxa_carteira_min_am = (1 + taxa_carteira_min_diaria) ** dias_uteis_mes - 1
+else:
+    taxa_carteira_min_diaria = 0.0
+    taxa_carteira_min_am = 0.0
+
 
 # Resultado diário
 resultado_liquido_dia = (
@@ -584,6 +620,40 @@ with tab_estrutura:
     impacto_pdd_pl_am = (pdd_dia * 21) / pl_total if pl_total > 0 else 0.0
     taxa_media_pl_am_liq = taxa_media_pl_am - impacto_pdd_pl_am
     
+    # Custos totais por dia (tudo que sai do fundo)
+    custos_totais_dia = (
+        custo_senior_dia
+        + custo_mezz_dia
+        + custo_adm_dia
+        + custo_gestao_dia
+        + pdd_dia
+        + custo_outros_dia
+    )
+
+    # Receitas fixas por dia (que NÃO dependem da taxa da carteira)
+    receitas_fixas_dia = receita_caixa_dia + receita_outros_dia
+
+    # Queremos a taxa mínima tal que:
+    # resultado_junior_dia = 0 =
+    #   valor_recebiveis * taxa_carteira_min_diaria
+    #   + receitas_fixas_dia
+    #   - custos_totais_dia
+    #
+    # => taxa_carteira_min_diaria = (custos_totais_dia - receitas_fixas_dia) / valor_recebiveis
+
+    if valor_recebiveis > 0:
+        numerador_dia = custos_totais_dia - receitas_fixas_dia
+        taxa_carteira_min_diaria = numerador_dia / valor_recebiveis
+        taxa_carteira_min_diaria = max(0.0, taxa_carteira_min_diaria)
+
+        dias_uteis_ano = 252
+        dias_uteis_mes = dias_uteis_ano / 12  # ~21 dias úteis
+        taxa_carteira_min_am = (1 + taxa_carteira_min_diaria) ** dias_uteis_mes - 1
+    else:
+        taxa_carteira_min_diaria = 0.0
+        taxa_carteira_min_am = 0.0
+
+    
     # --- CÁLCULO DE CAPTAÇÃO DISPONÍVEL ---
     # Quanto o PL Total pode crescer mantendo a Júnior atual fixa, até bater no Sub_Min?
     # PL_Max = Valor_Junior / Sub_Min
@@ -594,14 +664,14 @@ with tab_estrutura:
     else:
         captacao_disponivel = 0.0
     
-    # AGORA SÃO 5 COLUNAS
-    col1, col2, col3, col4, col5 = st.columns(5)
+        # AGORA SÃO 6 COLUNAS
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     col1.metric("Alocação em Recebíveis", format_brl(valor_recebiveis), f"{pct_recebiveis*100:.0f}% do PL")
     col2.metric("Caixa (a CDI)", format_brl(valor_caixa), f"{(1 - pct_recebiveis)*100:.0f}% do PL")
     col3.metric("Mínimo em Recebíveis", format_brl(min_recebiveis_regra), "67% do PL", delta_color="inverse")
 
-    col4.metric(
+    col5.metric(
         "Taxa média do PL (a.m.)",
         f"{taxa_media_pl_am*100:.2f}%",
         delta=f"Líq. de PDD: {taxa_media_pl_am_liq*100:.2f}%", 
@@ -609,24 +679,43 @@ with tab_estrutura:
         help="A taxa principal é bruta. O valor menor abaixo já desconta o custo da PDD mensal."
     )
     
-    # NOVO CARD 5: CAPTAÇÃO DISPONÍVEL
+    # CARD 5: Captação disponível (como já estava)
     lbl_cap = "Captação Disp. (Sênior/Mezz)"
     val_cap = format_brl(captacao_disponivel)
-    
     if captacao_disponivel >= 0:
         delta_cap = "Espaço para crescer"
-        cor_cap = "normal" # Verde
+        cor_cap = "normal"
     else:
         delta_cap = "Desenquadrado"
-        cor_cap = "inverse" # Vermelho
-        
-    col5.metric(
+        cor_cap = "inverse"
+    col4.metric(
         lbl_cap, 
         val_cap, 
         delta=delta_cap, 
         delta_color=cor_cap,
         help="Quanto o fundo pode captar de cotas Sênior/Mezzanino mantendo a Subordinação Mínima atual."
     )
+
+    # CARD 6: Taxa mínima da carteira para pagar TODOS os custos
+    taxa_min_am_pct = taxa_carteira_min_am * 100.0
+    delta_taxa_min = taxa_min_am_pct - taxa_carteira_am_pct
+
+    col6.metric(
+        "Taxa mín. Carteira (break-even)",
+        f"{taxa_min_am_pct:.4f}% a.m.",
+        delta=f"{delta_taxa_min:+.4f} p.p. vs atual",
+        delta_color="inverse" if delta_taxa_min > 0 else "normal",
+        help=(
+            "Taxa média mínima dos recebíveis necessária para que as receitas "
+            "(carteira + caixa + outras) cubram todos os custos: Sênior, Mezz, "
+            "adm, gestão, PDD e outros custos, deixando o resultado da Cota "
+            "Júnior em zero."
+        ),
+    )
+
+
+    
+
 
     st.markdown("---")
     st.markdown('<div class="section-header">📊 P&L Diário do Fundo</div>', unsafe_allow_html=True)
@@ -1435,16 +1524,31 @@ with tab_alvo:
                 help="Quanto você quer que a cota Júnior renda ao ano?"
             )
 
-        # --- CÁLCULO REVERSO ---
-        
-        # 1. Resultado Líquido Diário Necessário para a Meta
+        # --- CÁLCULO REVERSO: dado o ROE alvo da Júnior, qual taxa preciso na carteira? ---
+
         if target_roe_jr > -100:
             # ROE anual composto -> retorno diário composto
-            ret_aa = target_roe_jr / 100.0                 # ex.: 0.4072
-            fator_diario = (1 + ret_aa) ** (1/252) - 1     # mesmo conceito da Aba 1
-            res_dia_nec = fator_diario * valor_junior
+            roe_anual = target_roe_jr / 100.0
+            r_jr_dia_alvo = (1 + roe_anual) ** (1/252) - 1
+
+            # Resultado diário que a Júnior precisa ter
+            res_jr_dia_nec = r_jr_dia_alvo * valor_junior
+
+            # Equação:
+            # res_jr_dia_nec = valor_recebiveis * taxa_dia_nec + receitas_fixas_dia - custos_totais_dia
+            #  => taxa_dia_nec = (res_jr_dia_nec + custos_totais_dia - receitas_fixas_dia) / valor_recebiveis
+
+            if valor_recebiveis > 0:
+                numerador_nec = res_jr_dia_nec + custos_totais_dia - receitas_fixas_dia
+                taxa_dia_nec = numerador_nec / valor_recebiveis
+                taxa_mes_nec = ((1 + taxa_dia_nec) ** 21 - 1) * 100
+            else:
+                taxa_dia_nec = 0.0
+                taxa_mes_nec = 0.0
         else:
-            res_dia_nec = 0.0
+            taxa_dia_nec = 0.0
+            taxa_mes_nec = 0.0
+
 
 
             
@@ -1505,21 +1609,19 @@ with tab_alvo:
         taxas_necessarias = []
 
         for roe in roe_range:
-            # ROE anual composto -> diário composto, igual à Aba 1
-            ret_aa = roe / 100.0
-            r_dia = (1 + ret_aa) ** (1/252) - 1
-            res_d = r_dia * valor_junior
-
-            rec_t = res_d + custos_totais_reais_dia
-            rec_c = rec_t - receitas_fixas_dia
+            roe_anual = roe / 100.0
+            r_jr_dia = (1 + roe_anual) ** (1/252) - 1
+            res_jr_dia = r_jr_dia * valor_junior
 
             if valor_recebiveis > 0:
-                t_d = rec_c / valor_recebiveis           # taxa diária da carteira
-                t_m = ((1 + t_d) ** 21 - 1) * 100        # taxa mensal composta
+                numerador = res_jr_dia + custos_totais_dia - receitas_fixas_dia
+                t_dia = numerador / valor_recebiveis
+                t_mes = ((1 + t_dia) ** 21 - 1) * 100
             else:
-                t_m = 0.0
+                t_mes = 0.0
 
-            taxas_necessarias.append(t_m)
+            taxas_necessarias.append(t_mes)
+
 
 
         fig_target = go.Figure()
