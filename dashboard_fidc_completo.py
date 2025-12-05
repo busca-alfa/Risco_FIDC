@@ -84,11 +84,6 @@ def format_brl(x):
 st.sidebar.header("⚙️ Parâmetros do FIDC")
 
 # >>> Campo para você anotar melhorias / ideias:
-notas_usuario = st.sidebar.text_area(
-    "Bloco de notas (melhorias / ideias para o modelo)",
-    ""
-)
-# (não entra em nenhum cálculo, é só para você não esquecer)
 
 st.sidebar.markdown("---")
 
@@ -110,7 +105,7 @@ valor_mezz = st.sidebar.number_input(
 valor_senior = st.sidebar.number_input(
     "Valor da Cota Sênior (R$)",
     min_value=0.0,
-    value=20_000_000.0,
+    value=10_000_000.0,
     step=500_000.0,
     format="%.2f"
 )
@@ -123,7 +118,7 @@ sub_min_pct = st.sidebar.number_input(
     "Índice mínimo de subordinação da Cota Júnior (% do PL)",
     min_value=0.0,
     max_value=100.0,
-    value=float(100 * valor_junior / pl_total) if pl_total > 0 else 20.0,
+    value=20.0,
     step=1.0,
     format="%.2f"
 )
@@ -135,7 +130,7 @@ st.sidebar.markdown("---")
 cdi_aa_pct = st.sidebar.number_input(
     "CDI (% a.a.)",
     min_value=0.0,
-    value=10.0,
+    value=15.0,
     step=0.25,
     format="%.2f"
 )
@@ -146,8 +141,8 @@ cdi_am = (1 + cdi_aa) ** (1/12) - 1
 taxa_carteira_am_pct = st.sidebar.number_input(
     "Taxa da carteira (% a.m. sobre recebíveis)",
     min_value=0.0,
-    value=2.5,
-    step=0.1,
+    value=2.35,
+    step=0.05,
     format="%.2f"
 )
 taxa_carteira_am = taxa_carteira_am_pct / 100.0
@@ -167,14 +162,14 @@ st.sidebar.markdown("---")
 spread_senior_aa_pct = st.sidebar.number_input(
     "Spread da Cota Sênior (% a.a. sobre CDI)",
     min_value=0.0,
-    value=1.0,
+    value=5.0,
     step=0.25,
     format="%.2f"
 )
 spread_mezz_aa_pct = st.sidebar.number_input(
     "Spread da Cota Mezzanino (% a.a. sobre CDI)",
     min_value=0.0,
-    value=2.5,
+    value=6.5,
     step=0.25,
     format="%.2f"
 )
@@ -193,15 +188,15 @@ st.sidebar.markdown("---")
 taxa_adm_aa_pct = st.sidebar.number_input(
     "Taxa de Administração (% a.a. sobre PL)",
     min_value=0.0,
-    value=0.5,
-    step=0.10,
+    value=0.3,
+    step=0.05,
     format="%.2f"
 )
 taxa_gestao_aa_pct = st.sidebar.number_input(
     "Taxa de Gestão (% a.a. sobre PL)",
     min_value=0.0,
-    value=1.0,
-    step=0.10,
+    value=0.5,
+    step=0.05,
     format="%.2f"
 )
 taxa_adm_aa = taxa_adm_aa_pct / 100.0
@@ -213,7 +208,7 @@ taxa_gestao_diaria = anual_to_diario(taxa_gestao_aa)
 outros_custos_mensais = st.sidebar.number_input(
     "Outros custos fixos (R$ / mês)",
     min_value=0.0,
-    value=0.0,
+    value=100_000.0,
     step=1_000.0,
     format="%.2f"
 )
@@ -224,7 +219,7 @@ custo_outros_dia = outros_custos_mensais * 12.0 / 252.0
 outros_receitas_mensais = st.sidebar.number_input(
     "Outras receitas (R$ / mês)",
     min_value=0.0,
-    value=0.0,
+    value=150_000.0,
     step=1_000.0,
     format="%.2f"
 )
@@ -385,24 +380,22 @@ resultado_liquido_dia = (
     - custo_outros_dia
 )
 
-# --- RETORNOS DA COTA JÚNIOR (todos coerentes com o Waterfall) ---
-
 resultado_junior_dia = resultado_liquido_dia
 
-# Retorno diário (simples)
-retorno_diario_junior = (
-    resultado_junior_dia / valor_junior if valor_junior > 0 else 0.0
-)
+if valor_junior > 0:
+    # Retorno diário da Júnior
+    retorno_diario_junior = resultado_junior_dia / valor_junior
 
-# Retorno mensal projetado (21 dias úteis)
-retorno_mensal_junior = (
-    (resultado_junior_dia * 21) / valor_junior if valor_junior > 0 else 0.0
-)
+    # Retorno mensal (composto em 21 dias úteis)
+    retorno_mensal_junior = (1 + retorno_diario_junior) ** 21 - 1
 
-# Retorno anual simples (coerente com o gráfico Waterfall!)
-retorno_anualizado_junior = (
-    (resultado_junior_dia * 252) / valor_junior if valor_junior > 0 else 0.0
-)
+    # Retorno anual (composto em 252 dias úteis)
+    retorno_anualizado_junior = (1 + retorno_diario_junior) ** 252 - 1
+else:
+    retorno_diario_junior = 0.0
+    retorno_mensal_junior = 0.0
+    retorno_anualizado_junior = 0.0
+
 
 
 retorno_diario_senior = taxa_senior_diaria
@@ -669,7 +662,6 @@ with tab_estrutura:
     
     
     # Retornos mensais projetados
-    retorno_mensal_junior  = (1 + retorno_anualizado_junior) ** (1/12) - 1
     retorno_mensal_mezz    = (1 + retorno_anualizado_mezz)   ** (1/12) - 1
     retorno_mensal_senior  = (1 + retorno_anualizado_senior) ** (1/12) - 1
     
@@ -1417,12 +1409,19 @@ with tab_alvo:
         st.dataframe(df_comp_sim, use_container_width=True, hide_index=True)
 
     # ============================================================
-    # SUB-ABA 3: TAXA-ALVO DO FUNDO (NOVA FUNCIONALIDADE REVERSA)
+    # SUB-ABA 3: TAXA-ALVO DO FUNDO (CÁLCULO POR CUSTO IMPLÍCITO)
     # ============================================================
     with subtab_taxa_alvo:
         st.markdown("### 🎯 Calculadora de Taxa-Alvo (Engenharia Reversa)")
         
-        # Layout
+        # --- CÁLCULO DOS CUSTOS REAIS (IMPLÍCITOS) ---
+        # Truque matemático para garantir que o cenário atual bata 100%
+        # Custos = Tudo que entrou (Receita) - O que sobrou (Lucro Jr)
+        custos_totais_reais_dia = receita_total_dia - resultado_junior_dia
+        
+        # Receitas que não dependem da taxa da carteira
+        receitas_fixas_dia = receita_caixa_dia + receita_outros_dia
+        
         c_input, c_kpi = st.columns([1, 3])
         
         with c_input:
@@ -1430,29 +1429,35 @@ with tab_alvo:
             target_roe_jr = st.number_input(
                 "ROE Alvo da Júnior (% a.a.)", 
                 min_value=-100.0, 
-                max_value=500.0, 
-                value=float(retorno_anualizado_junior*100), 
+                max_value=1000.0, 
+                value=0.00, 
                 step=1.0,
                 help="Quanto você quer que a cota Júnior renda ao ano?"
             )
 
         # --- CÁLCULO REVERSO ---
-        # 1. Resultado Líquido Diário Necessário
-        res_dia_nec = (target_roe_jr / 100.0 * valor_junior) / 252.0
         
-        # 2. Custos Totais (Fixos + Variáveis + PDD Atual)
-        custos_totais_dia = custo_senior_dia + custo_mezz_dia + custo_adm_dia + custo_gestao_dia + pdd_dia + custo_outros_dia
+        # 1. Resultado Líquido Diário Necessário para a Meta
+        if target_roe_jr > -100:
+            # ROE anual composto -> retorno diário composto
+            ret_aa = target_roe_jr / 100.0                 # ex.: 0.4072
+            fator_diario = (1 + ret_aa) ** (1/252) - 1     # mesmo conceito da Aba 1
+            res_dia_nec = fator_diario * valor_junior
+        else:
+            res_dia_nec = 0.0
+
+
+            
+        # 2. Receita Total Necessária (Lucro Alvo + Custos Reais)
+        rec_total_nec = res_dia_nec + custos_totais_reais_dia
         
-        # 3. Receita Total Necessária
-        rec_total_nec = res_dia_nec + custos_totais_dia
+        # 3. Receita de Carteira Necessária (Total - Caixa - Outras)
+        rec_carteira_necessaria = rec_total_nec - receitas_fixas_dia
         
-        # 4. Receita de Carteira Necessária (Total - Receitas Fixas)
-        rec_carteira_necessaria = rec_total_nec - receita_caixa_dia - receita_outros_dia
-        
-        # 5. Taxa Mensal Necessária
+        # 4. Taxa Mensal Necessária
         if valor_recebiveis > 0:
             taxa_dia_nec = rec_carteira_necessaria / valor_recebiveis
-            # Evitar erro matemático se receita necessária for muito negativa
+            # Conversão Diária -> Mensal (Composta 21 dias)
             taxa_mes_nec = ((1 + taxa_dia_nec)**21 - 1) * 100
         else:
             taxa_mes_nec = 0.0
@@ -1462,12 +1467,18 @@ with tab_alvo:
         with c_kpi:
             k1, k2, k3 = st.columns(3)
             
-            cor_delta = "inverse" if delta_taxa > 0 else "normal"
+            # Se a diferença for menor que 0.0001, consideramos zero (para ficar cinza)
+            if abs(delta_taxa) < 0.0001:
+                cor_delta = "off"
+                delta_msg = "Mantém Atual"
+            else:
+                cor_delta = "inverse" if delta_taxa > 0 else "normal"
+                delta_msg = f"{delta_taxa:+.4f} p.p. vs Atual"
             
             k1.metric(
                 "Taxa Mínima na Carteira", 
                 f"{taxa_mes_nec:.4f}% a.m.",
-                delta=f"{delta_taxa:+.4f} p.p. vs Atual",
+                delta=delta_msg,
                 delta_color=cor_delta,
                 help="Taxa média mensal necessária nos recebíveis para bater a meta."
             )
@@ -1487,70 +1498,64 @@ with tab_alvo:
 
         st.markdown("---")
         
-        # --- GRÁFICO DE SENSIBILIDADE ---
+        # --- GRÁFICO DE EQUILÍBRIO ---
         st.markdown("#### 📊 Curva de Equilíbrio: ROE vs Taxa Necessária")
         
-        # Gerar dados para o gráfico
         roe_range = np.linspace(max(0, target_roe_jr - 20), target_roe_jr + 20, 50)
         taxas_necessarias = []
-        
+
         for roe in roe_range:
-            r_d = (roe / 100.0 * valor_junior) / 252.0
-            r_tot = r_d + custos_totais_dia
-            r_cart = r_tot - receita_caixa_dia - receita_outros_dia
+            # ROE anual composto -> diário composto, igual à Aba 1
+            ret_aa = roe / 100.0
+            r_dia = (1 + ret_aa) ** (1/252) - 1
+            res_d = r_dia * valor_junior
+
+            rec_t = res_d + custos_totais_reais_dia
+            rec_c = rec_t - receitas_fixas_dia
+
             if valor_recebiveis > 0:
-                t_d = r_cart / valor_recebiveis
-                t_m = ((1 + t_d)**21 - 1) * 100
+                t_d = rec_c / valor_recebiveis           # taxa diária da carteira
+                t_m = ((1 + t_d) ** 21 - 1) * 100        # taxa mensal composta
             else:
-                t_m = 0
+                t_m = 0.0
+
             taxas_necessarias.append(t_m)
+
 
         fig_target = go.Figure()
         
-        # 1. Curva Necessária
+        # Curva
         fig_target.add_trace(go.Scatter(
-            x=roe_range, 
-            y=taxas_necessarias,
-            mode='lines',
-            name='Curva de Equilíbrio',
+            x=roe_range, y=taxas_necessarias, mode='lines', name='Curva de Equilíbrio',
             line=dict(color='#2980b9', width=4)
         ))
         
-        # 2. Ponto META (Selecionado)
+        # Ponto META
         fig_target.add_trace(go.Scatter(
-            x=[target_roe_jr],
-            y=[taxa_mes_nec],
-            mode='markers+text',
-            name='Sua Meta',
+            x=[target_roe_jr], y=[taxa_mes_nec], mode='markers+text', name='Meta',
             text=['META'], textposition='top center',
             marker=dict(size=12, color='#e74c3c', symbol='diamond')
         ))
 
-        # 3. Ponto ATUAL (NOVO!)
-        # O ponto atual é: X = ROE Atual, Y = Taxa Atual
+        # Ponto ATUAL (Calculado pelas variáveis globais para garantir alinhamento)
         fig_target.add_trace(go.Scatter(
-            x=[retorno_anualizado_junior * 100],
-            y=[taxa_carteira_am_pct],
-            mode='markers+text',
-            name='Cenário Atual',
-            text=['ATUAL'], textposition='top left',
-            marker=dict(size=14, color='#27ae60', symbol='star') # Estrela Verde
+            x=[retorno_anualizado_junior * 100], y=[taxa_carteira_am_pct], 
+            mode='markers+text', name='Atual',
+            text=['ATUAL'], textposition='bottom right',
+            marker=dict(size=14, color='#27ae60', symbol='star')
         ))
 
-        # Linha da Taxa Atual (Referência)
+        # Linha de Referência
         fig_target.add_hline(
             y=taxa_carteira_am_pct, 
-            line_dash="dash", 
-            line_color="green", 
-            annotation_text=f"Taxa Atual ({taxa_carteira_am_pct:.2f}%)",
-            annotation_position="bottom right"
+            line_dash="dash", line_color="green", opacity=0.4,
+            annotation_text=f"Taxa Atual ({taxa_carteira_am_pct:.2f}%)", annotation_position="bottom right"
         )
 
         fig_target.update_layout(
             xaxis_title="ROE Alvo da Júnior (% a.a.)",
             yaxis_title="Taxa Média Mensal Necessária (%)",
-            height=400,
-            margin=dict(l=20, r=20, t=40, b=20),
+            height=400, margin=dict(l=20, r=20, t=30, b=20),
             hovermode="x unified",
             legend=dict(orientation="h", y=1.02, xanchor="center", x=0.5)
         )
