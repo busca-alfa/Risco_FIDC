@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from pathlib import Path
 
 
 
@@ -55,7 +56,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🏦 FIDC - Estrutura de Cotas e P&L Diário")
+LOGO_PATH = Path(r"C:\VS Code Projects\Risco_FIDC\Risco_FIDC\logo_rios_3d_redondo.png")
+col_logo, col_title = st.columns([0.12, 0.88])
+with col_logo:
+    st.image(str(LOGO_PATH), width=350)
+with col_title:
+    st.title("FIDC - Estrutura de Cotas e P&L Diário")
 st.markdown(
     """
     Modelo econômico-financeiro para analisar a estrutura de cotas de um FIDC, 
@@ -1294,8 +1300,8 @@ with tab_alvo:
         
         # ========== CÁLCULOS ==========
         prazo_meses = prazo_dias / 30.0
-        fator_desc = 1 / ((1 + taxa_juros_am) ** prazo_meses) if taxa_juros_am > 0 else 1
-        desagio_valor = ticket * (1 - fator_desc)
+        # Deságio pelo valor de face: aplica taxa direto sobre o face para o período
+        desagio_valor = ticket * taxa_juros_am * prazo_meses
         desagio_pct = (desagio_valor / ticket * 100) if ticket > 0 else 0
         
         preco_compra = ticket - desagio_valor
@@ -1382,27 +1388,42 @@ with tab_alvo:
         # Cenários de Pagamento
         st.markdown("---")
         st.markdown('<div class="section-header">🎯 Comparação de Cenários de Pagamento</div>', unsafe_allow_html=True)
+        # Cenários por faixa de PDD (usando as faixas da sidebar)
         cenarios_pag = [
             {'nome': '✅ No Prazo', 'dias': 0, 'pdd': 0.0, 'desc': 'Pontual'},
             {'nome': '⏰ Atraso 5d', 'dias': 5, 'pdd': 0.0, 'desc': 'Atraso curto'},
-            {'nome': '⏰ Atraso 30d', 'dias': 30, 'pdd': 0.0, 'desc': 'Atraso médio'},
-            {'nome': '⚠️ Atraso 60d', 'dias': 60, 'pdd': prob_pdd * 2, 'desc': 'Risco alto'},
+            {'nome': '0-30d', 'dias': 30, 'pdd': prov_0_30/100, 'desc': 'Faixa 0-30'},
+            {'nome': '31-60d', 'dias': 60, 'pdd': prov_31_60/100, 'desc': 'Faixa 31-60'},
+            {'nome': '61-90d', 'dias': 90, 'pdd': prov_61_90/100, 'desc': 'Faixa 61-90'},
+            {'nome': '91-120d', 'dias': 120, 'pdd': prov_91_120/100, 'desc': 'Faixa 91-120'},
+            {'nome': '121-150d', 'dias': 150, 'pdd': prov_121_150/100, 'desc': 'Faixa 121-150'},
+            {'nome': '151-180d', 'dias': 180, 'pdd': prov_151_180/100, 'desc': 'Faixa 151-180'},
+            {'nome': '181-240d', 'dias': 210, 'pdd': prov_181_240/100, 'desc': 'Faixa 181-240'},
+            {'nome': '241-300d', 'dias': 270, 'pdd': prov_241_300/100, 'desc': 'Faixa 241-300'},
+            {'nome': '>300d', 'dias': 330, 'pdd': prov_300p/100, 'desc': 'Faixa >300'},
         ]
         res_list = []
         for c in cenarios_pag:
             pen = (ticket * multa_pct if c['dias']>0 else 0) + (ticket * mora_dia * c['dias'])
             rec = ticket + pen
             pdd_c = c.get('pdd', 0.0)
-            if rec > 0 and desembolso_liquido > 0:
-                id_ = (rec / desembolso_liquido) ** (1/max(1, prazo_dias)) - 1
-                im_ = ((1+id_)**30 - 1) * (1 - pdd_c)
+            pdd_val = ticket * pdd_c  # provisão em R$
+            rec_ajust = rec - pdd_val
+
+            if rec_ajust > 0 and desembolso_liquido > 0:
+                id_ = (rec_ajust / desembolso_liquido) ** (1/max(1, prazo_dias)) - 1
+                im_ = ((1+id_)**30 - 1)
                 ia_ = (1+im_)**12 - 1
-                rec_l = (rec - desembolso_liquido) * (1 - pdd_c)
-            else: im_ = ia_ = rec_l = 0
+                rec_l = rec_ajust - desembolso_liquido
+            else:
+                im_ = ia_ = rec_l = 0
+
             res_list.append({
                 'Cenário': c['nome'], 'Descrição': c['desc'],
+                'PDD %': f"{pdd_c*100:.2f}%",
+                'PDD (R$)': format_brl(pdd_val),
                 'TIR Mensal': f"{im_*100:.2f}%", 'TIR Anual': f"{ia_*100:.2f}%", 
-                'Rec. Líquida': format_brl(rec_l)
+                'Rec. Líquida (R$)': format_brl(rec_l)
             })
         st.dataframe(pd.DataFrame(res_list), use_container_width=True, hide_index=True)
 
@@ -2758,6 +2779,71 @@ with tab_rating:
             )
 
         # -------------------------------------------------------------
+        # INPUTS – BLOCO 3: DINÂMICA DE CAIXA / ANTECIPAÇÃO DE RECEBÍVEIS
+        # -------------------------------------------------------------
+        st.markdown("#### 💸 Dinâmica de Caixa e Necessidade de Antecipação de Recebíveis")
+
+        c_nc1, c_nc2, c_nc3, c_nc4 = st.columns(4)
+
+        with c_nc1:
+            faturamento_mensal = st.number_input(
+                "Faturamento bruto mensal (R$)",
+                min_value=0.0,
+                value=10_000_000.0,
+                step=500_000.0,
+                format="%.2f",
+                help="Faturamento médio mensal da empresa/sacado."
+            )
+
+        with c_nc2:
+            pmr_dias = st.number_input(
+                "Prazo médio de recebimento (dias)",
+                min_value=0,
+                value=60,
+                step=5,
+                help="Dias corridos médios entre venda e recebimento."
+            )
+
+        with c_nc3:
+            pmp_dias = st.number_input(
+                "Prazo médio de pagamento a fornecedores (dias)",
+                min_value=0,
+                value=30,
+                step=5,
+                help="Dias corridos médios entre compra e pagamento."
+            )
+
+        with c_nc4:
+            caixa_proprio = st.number_input(
+                "Caixa livre disponível (R$)",
+                min_value=0.0,
+                value=2_000_000.0,
+                step=250_000.0,
+                format="%.2f",
+                help="Caixa próprio que a empresa tem para financiar o giro."
+            )
+
+        # Cálculo da necessidade de antecipação
+        if faturamento_mensal > 0:
+            vendas_dia = faturamento_mensal / 30.0  # aprox. dias corridos
+        else:
+            vendas_dia = 0.0
+
+        gap_dias = max(pmr_dias - pmp_dias, 0)  # se PMR <= PMP, não há gap de saída antes da entrada
+        necessidade_caixa = vendas_dia * gap_dias
+        necessidade_antecipacao = max(necessidade_caixa - caixa_proprio, 0.0)
+
+        if faturamento_mensal > 0:
+            dependencia_antecipacao = necessidade_antecipacao / faturamento_mensal
+        else:
+            dependencia_antecipacao = 0.0
+
+        if necessidade_antecipacao > 0:
+            cobertura_limite_necessidade = limite_desejado / necessidade_antecipacao
+        else:
+            cobertura_limite_necessidade = 0.0
+
+        # -------------------------------------------------------------
         # CÁLCULO – RATING, PD, EL, TAXA E CONCENTRAÇÃO
         # -------------------------------------------------------------
         dias_uteis_ano = 252
@@ -2901,6 +2987,37 @@ with tab_rating:
             st.warning("⚠️ Override aplicado sem justificativa preenchida.")
 
         # -------------------------------------------------------------
+        # CARDS – NECESSIDADE DE ANTECIPAÇÃO (DERIVADA DO CICLO DE CAIXA)
+        # -------------------------------------------------------------
+        st.markdown("#### 🔄 Gap de Caixa e Dependência de Antecipação")
+
+        nc1, nc2, nc3, nc4 = st.columns(4)
+
+        nc1.metric(
+            "Necessidade de Caixa (Ciclo)",
+            format_brl(necessidade_caixa),
+            help="Vendas médias por dia × (PMR − PMP). Capital de giro necessário para financiar o ciclo."
+        )
+
+        nc2.metric(
+            "Necessidade de Antecipação",
+            format_brl(necessidade_antecipacao),
+            help="Necessidade de caixa menos o caixa próprio disponível."
+        )
+
+        nc3.metric(
+            "% Dependência de Antecipação",
+            f"{dependencia_antecipacao*100:.2f}%",
+            help="Necessidade de antecipação / faturamento mensal. Quanto maior, mais dependente de FIDC/antecipação."
+        )
+
+        nc4.metric(
+            "Cobertura da Necessidade pelo Limite",
+            "N/A" if necessidade_antecipacao == 0 else f"{cobertura_limite_necessidade*100:.2f}%",
+            help="Quanto do gap de caixa (necessidade de antecipação) é coberto pelo limite desejado."
+        )
+
+        # -------------------------------------------------------------
         # COMPOSIÇÃO DA TAXA (WATERFALL) + PESO DAS VARIÁVEIS
         # -------------------------------------------------------------
         st.markdown("---")
@@ -2933,7 +3050,7 @@ with tab_rating:
             fig_wf.update_layout(
                 showlegend=False,
                 yaxis_title="% a.m.",
-                height=350,
+                height=400,
                 margin=dict(l=20, r=20, t=40, b=20),
             )
             st.plotly_chart(fig_wf, use_container_width=True)
@@ -3004,6 +3121,7 @@ with tab_rating:
 
         st.dataframe(
             df_contrib.sort_values("Abs", ascending=False).drop(columns=["Abs"]),
+
             hide_index=True,
             use_container_width=True,
         )
