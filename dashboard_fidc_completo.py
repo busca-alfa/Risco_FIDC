@@ -1785,17 +1785,7 @@ with tab_alvo:
 with tab_dre:
     from io import BytesIO  # para exportar Excel
 
-    st.subheader("DRE Projetado – 12 meses (mês a mês)")
-
-    st.markdown(
-        """
-        Esta aba simula **12 meses** de operação do FIDC, permitindo:
-        - Ajustar taxa da carteira e % do PL em recebíveis mês a mês  
-        - Incluir aportes/resgates via **movimento líquido** em cada classe de cota  
-        - Alterar outras receitas e outros custos mensais  
-        - Usar o **PL final de um mês como ponto de partida do mês seguinte**
-        """
-    )
+    st.subheader("DRE Projetado")
 
     # ---------------------------
     # TABELA EDITÁVEL DE PARÂMETROS POR MÊS
@@ -2193,10 +2183,9 @@ with tab_dre:
     # 3) GRÁFICO DE CAPACIDADE DE CAPTAÇÃO (CORREÇÃO MATEMÁTICA DEFINITIVA)
     # ---------------------------
     st.markdown("---")
-    st.markdown("#### Headroom: Capacidade de Captação (Sênior/Mezz)")
+    st.markdown("#### Capacidade de Captação (Sênior/Mezz)")
     st.caption(
-        "**Racional:** Dado o saldo atual da Cota Júnior, quanto o fundo pode ter de PL Total?"
-        "\n\n"
+        
         "🟢 **Verde (Positivo):** Espaço livre para captar novas cotas Sênior/Mezz.\n\n"
         "🔴 **Vermelho (Negativo):** Excesso de Sênior/Mezz. Necessário resgate (amortização) ou aporte na Júnior."
     )
@@ -2351,7 +2340,7 @@ with tab_dre:
     # NOVO GRÁFICO: COMPOSIÇÃO DO PL (VALOR + % - CORES SUAVES)
     # ---------------------------
     st.markdown("---")
-    st.markdown("#### Composição do Patrimônio Líquido (Evolução)")
+    st.markdown("#### Composição do Patrimônio Líquido")
     st.caption("Evolução da proporção de cada classe. Rótulos mostram **Valor (MM)** e **Participação (%)**.")
 
     # Listas para armazenar porcentagens e textos formatados
