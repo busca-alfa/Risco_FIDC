@@ -29,6 +29,8 @@ st.markdown(
         font-weight: 700;
         word-wrap: break-word;       /* Permite quebrar linha se for muito longo */
         white-space: normal !important; /* OBRIGA a quebra de linha e impede o corte (...) */
+        overflow: visible !important;  /* evita corte do texto */
+        text-overflow: clip !important;/* remove reticências */
         line-height: 1.2;
     }
 
@@ -56,7 +58,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("FIDC - Estrutura de Cotas e P&L Diário")
+LOGO_PATH = Path(r"C:\VS Code Projects\Risco_FIDC\Risco_FIDC\logo_rios_3d_redondo.png")
+col_logo, col_title = st.columns([0.12, 0.88])
+with col_logo:
+    st.image(str(LOGO_PATH), width=350)
+with col_title:
+    st.title("FIDC - Estrutura de Cotas e P&L Diário")
 st.markdown(
     """
     Modelo econômico-financeiro para analisar a estrutura de cotas de um FIDC, 
@@ -79,6 +86,10 @@ def format_pct(x):
 
 def format_brl(x):
     return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+# Formatação em milhares (escala 1.000) com separador de milhar em vírgula (ex.: 6,000)
+def format_brl_mil(x):
+    return f"R$ {x/1000:,.0f}"
 
 # -------------------------------------------------------------------
 # SIDEBAR – PARÂMETROS
@@ -181,8 +192,9 @@ spread_mezz_aa = spread_mezz_aa_pct / 100.0
 taxa_senior_aa = cdi_aa + spread_senior_aa
 taxa_mezz_aa = cdi_aa + spread_mezz_aa
 
-taxa_senior_diaria = anual_to_diario(taxa_senior_aa)
-taxa_mezz_diaria = anual_to_diario(taxa_mezz_aa)
+# Para Sênior/Mezz usamos rateio linear do anual (juros simples sobre saldo da cota)
+taxa_senior_diaria = taxa_senior_aa / 252.0
+taxa_mezz_diaria = taxa_mezz_aa / 252.0
 
 st.sidebar.markdown("---")
 
@@ -601,16 +613,31 @@ with tab_estrutura:
     st.markdown('<div class="section-header">🏗️ Estrutura de Capital</div>', unsafe_allow_html=True)
 
     # 1. Preparar os dados na ordem correta (Sênior -> Mezz -> Júnior)
+    perc_senior = valor_senior / pl_total if pl_total > 0 else 0
+    perc_mezz = valor_mezz / pl_total if pl_total > 0 else 0
+    perc_junior = valor_junior / pl_total if pl_total > 0 else 0
+
+    # Referências anuais locais (evita dependências de variáveis mais abaixo)
+    _dias_ano_ref = 252
+    custo_senior_ano = custo_senior_dia * _dias_ano_ref
+    custo_mezz_ano = custo_mezz_dia * _dias_ano_ref
+    resultado_junior_ano_local = resultado_junior_dia * _dias_ano_ref
+    resultado_liquido_ano_local = resultado_liquido_dia * _dias_ano_ref
+    taxa_media_pl_am_local = pct_recebiveis * taxa_carteira_am + (1.0 - pct_recebiveis) * cdi_am
+
+    # Taxas e resultados por classe (valores anuais)
     dados_estrutura = [
-        ["Sênior", valor_senior, valor_senior / pl_total if pl_total > 0 else 0, "#D1E7DD"], # Verde claro
-        ["Mezzanino", valor_mezz, valor_mezz / pl_total if pl_total > 0 else 0, "#FFF3CD"],  # Amarelo claro
-        ["Júnior (Subordinada)", valor_junior, valor_junior / pl_total if pl_total > 0 else 0, "#F8D7DA"], # Vermelho claro
+        ["Sênior", valor_senior, perc_senior, taxa_senior_aa * 100, -custo_senior_ano, "#D1E7DD"],
+        ["Mezzanino", valor_mezz, perc_mezz, taxa_mezz_aa * 100, -custo_mezz_ano, "#FFF3CD"],
+        ["Júnior (Subordinada)", valor_junior, perc_junior, retorno_anualizado_junior * 100, resultado_junior_ano_local, "#F8D7DA"],
     ]
     
     # Adicionando linha de total
-    dados_estrutura.append(["TOTAL", pl_total, 1.0, "#E2E3E5"]) # Cinza
+    # Resultado total em juros/encargos: soma os valores absolutos de cada classe
+    total_resultado = sum(abs(row[4]) for row in dados_estrutura)
+    dados_estrutura.append(["TOTAL", pl_total, 1.0, "", total_resultado, "#E2E3E5"])
 
-    df_struct = pd.DataFrame(dados_estrutura, columns=["Classe", "Valor", "Perc", "Color"])
+    df_struct = pd.DataFrame(dados_estrutura, columns=["Classe", "Valor", "Perc", "Taxa_pct", "Resultado", "Color"])
 
     # Layout: Tabela Bonita + Gráfico Visual da Pilha
     c_tab, c_viz = st.columns([1.5, 1])
@@ -619,7 +646,7 @@ with tab_estrutura:
         # Tabela estilizada com Plotly
         fig_table = go.Figure(data=[go.Table(
             header=dict(
-                values=['<b>Classe</b>', '<b>Valor (R$)</b>', '<b>Participação (%)</b>'],
+                values=['<b>Classe</b>', '<b>Valor (R$)</b>', '<b>Taxa (% a.a.)</b>', '<b>Resultado (R$)</b>'],
                 fill_color='#2c3e50',
                 align='left',
                 font=dict(color='white', size=14),
@@ -629,7 +656,8 @@ with tab_estrutura:
                 values=[
                     df_struct.Classe, 
                     [format_brl(v) for v in df_struct.Valor], 
-                    [f"{p*100:.2f}%" for p in df_struct.Perc]
+                    [f"{p:.2f}%" if isinstance(p, (int, float, np.floating)) and p != "" else "" for p in df_struct.Taxa_pct],
+                    [format_brl(v) for v in df_struct.Resultado],
                 ],
                 fill_color=[df_struct.Color],
                 align='left',
@@ -763,9 +791,9 @@ with tab_estrutura:
         # AGORA SÃO 6 COLUNAS
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     
-    col1.metric("Alocação em Recebíveis", format_brl(valor_recebiveis), f"{pct_recebiveis*100:.0f}% do PL")
-    col2.metric("Caixa (a CDI)", format_brl(valor_caixa), f"{(1 - pct_recebiveis)*100:.0f}% do PL")
-    col3.metric("Mínimo em Recebíveis", format_brl(min_recebiveis_regra), "67% do PL", delta_color="inverse")
+    col1.metric("Alocação em Recebíveis", format_brl_mil(valor_recebiveis), f"{pct_recebiveis*100:.0f}% do PL")
+    col2.metric("Caixa (a CDI)", format_brl_mil(valor_caixa), f"{(1 - pct_recebiveis)*100:.0f}% do PL")
+    col3.metric("Mínimo em Recebíveis", format_brl_mil(min_recebiveis_regra), "67% do PL", delta_color="inverse")
 
     col5.metric(
         "Taxa média do PL (a.m.)",
@@ -777,7 +805,7 @@ with tab_estrutura:
     
     # CARD 5: Captação disponível (como já estava)
     lbl_cap = "Captação Disp. (Sênior/Mezz)"
-    val_cap = format_brl(captacao_disponivel)
+    val_cap = format_brl_mil(captacao_disponivel)
     if captacao_disponivel >= 0:
         delta_cap = "Espaço para crescer"
         cor_cap = "normal"
@@ -1613,7 +1641,7 @@ with tab_alvo:
         # SUB-ABA 3: TAXA-ALVO DO FUNDO (CÁLCULO POR CUSTO IMPLÍCITO)
         # ============================================================
         with subtab_taxa_alvo:
-            st.markdown("### 🎯 Calculadora de Taxa-Alvo (Engenharia Reversa)")
+            st.markdown("### 🎯 Calculadora de Taxa-Alvo")
         
             dias_uteis_ano = 252
             dias_uteis_mes = dias_uteis_ano / 12  # ~21 dias úteis
