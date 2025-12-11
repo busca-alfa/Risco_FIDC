@@ -792,7 +792,7 @@ with tab_estrutura:
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     col1.metric("Alocação em Recebíveis", format_brl_mil(valor_recebiveis), f"{pct_recebiveis*100:.0f}% do PL")
-    col2.metric("Caixa (a CDI)", format_brl_mil(valor_caixa), f"{(1 - pct_recebiveis)*100:.0f}% do PL")
+    col2.metric("Caixa (CDI)", format_brl_mil(valor_caixa), f"{(1 - pct_recebiveis)*100:.0f}% do PL")
     col3.metric("Mínimo em Recebíveis", format_brl_mil(min_recebiveis_regra), "67% do PL", delta_color="inverse")
 
     col5.metric(
@@ -1304,20 +1304,20 @@ with tab_alvo:
         
         with col_a:
             st.markdown("**Estrutura do Crédito:**")
-            ticket = st.number_input("Valor de Face (R$)", min_value=1000.0, value=100000.0, step=50000.0, format="%.2f", help="Valor que o cliente pagará no vencimento")
-            taxa_juros_am = st.number_input("Taxa de Juros (% a.m.)", min_value=0.0, value=float(taxa_carteira_am_pct), step=0.25, format="%.2f", help="Taxa que define o deságio na compra") / 100.0
+            ticket = st.number_input("Valor de Face (R$)", min_value=500.0, value=10000.0, step=500.0, format="%.2f", help="Valor que o cliente pagará no vencimento")
+            taxa_juros_am = st.number_input("Taxa de Juros (% a.m.)", min_value=0.0, value=float(taxa_carteira_am_pct), step=0.01, format="%.2f", help="Taxa que define o deságio na compra") / 100.0
             prazo_dias = st.number_input("Prazo (dias)", min_value=1, value=30, step=1)
         
         with col_b:
             st.markdown("**Taxas e Encargos:**")
-            tac_val = st.number_input("Outras Taxas (R$)", min_value=0.0, value=2000.0, step=500.0, format="%.2f", help="Descontada do desembolso")
+            tac_val = st.number_input("Outras Taxas (R$)", min_value=0.0, value=200.0, step=50.0, format="%.2f", help="Descontada do desembolso")
             mora_pct = st.number_input("Mora (% a.m.)", min_value=0.0, value=1.0, step=0.1, format="%.2f", help="Juros de mora sobre o valor de face") / 100.0
             multa_pct = st.number_input("Multa (% flat)", min_value=0.0, value=2.0, step=0.1, format="%.2f", help="Multa sobre o valor de face em caso de atraso") / 100.0
         
         with col_c:
             st.markdown("**Risco e Inadimplência:**")
             prob_pdd_pct = st.number_input("PDD - Probabilidade de Default (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5, format="%.2f", help="Reduz a taxa efetiva")
-            dias_atraso = st.number_input("Dias de Atraso Médio", min_value=0, value=0, step=5, help="Para cálculo de mora")
+            dias_atraso = st.number_input("Dias de Atraso Médio", min_value=0, value=0, step=1, help="Para cálculo de mora")
         
         prob_pdd = prob_pdd_pct / 100.0
         
@@ -1473,13 +1473,13 @@ with tab_alvo:
             pct_alocacao_sim = st.slider(
                 "🎯 % do PL em Recebíveis",
                 min_value=0.0, max_value=100.0,
-                value=float(pct_recebiveis * 100), step=5.0,
+                value=float(pct_recebiveis * 100), step=1.0,
                 format="%.0f%%", key="sim_aloc_rec",
                 help="Define quanto do PL vai para a carteira. O restante fica em Caixa."
             ) / 100.0
             
-            taxa_cart_sim = st.number_input("Taxa Carteira (% a.m.)", 0.0, 10.0, float(taxa_carteira_am_pct), 0.1, key="s_tx_c") / 100
-            taxa_caixa_sim = st.number_input("Taxa Caixa (% a.a.)", 0.0, 20.0, float(cdi_aa * 100), 0.5, key="s_tx_cx") / 100
+            taxa_cart_sim = st.number_input("Taxa Carteira (% a.m.)", 0.0, 10.0, float(taxa_carteira_am_pct), 0.01, key="s_tx_c") / 100
+            taxa_caixa_sim = st.number_input("Taxa Caixa (% a.a.)", 0.0, 20.0, float(cdi_aa * 100), 0.25, key="s_tx_cx") / 100
         
         with col_sim2:
             st.markdown("**💸 Custos das Cotas:**")
@@ -1491,8 +1491,8 @@ with tab_alvo:
             
             # Sliders de Variação de Custos/Receitas Fixas (Solicitados anteriormente)
             st.markdown("---")
-            var_outros_custos_pct = st.slider("Var. Custos Fixos (%)", -50, 50, 0, 5, key="s_var_cf") / 100.0
-            var_outras_rec_pct = st.slider("Var. Outras Receitas (%)", -50, 50, 0, 5, key="s_var_or") / 100.0
+            var_outros_custos_pct = st.slider("Var. Custos Fixos (%)", -100, 100, 0, 5, key="s_var_cf") / 100.0
+            var_outras_rec_pct = st.slider("Var. Outras Receitas (%)", -100, 100, 0, 5, key="s_var_or") / 100.0
 
             custo_outros_sim = custo_outros_dia * (1 + var_outros_custos_pct)
             rec_outros_sim = receita_outros_dia * (1 + var_outras_rec_pct)
@@ -1667,7 +1667,7 @@ with tab_alvo:
                     min_value=-100.0,
                     max_value=1000.0,
                     value=10.00,
-                    step=1.0,
+                    step=0.25,
                     help="Quanto você quer que a cota Júnior renda ao ano?"
                 )
         
@@ -3196,3 +3196,5 @@ with tab_rating:
 
     # chama o dashboard
     rating_dashboard()
+
+
