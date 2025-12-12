@@ -1454,14 +1454,31 @@ with tab_alvo:
     # SUB-ABA 1 (ou 2): SIMULADOR DE CENÁRIOS (AJUSTADO)
     # ============================================================
     with subtab_cenarios:
-        st.markdown("### Simulador de Estratégia (Alocação & Taxas)")
-        st.caption("Simule o impacto de alterar o **Volume da Carteira** (Alocação), Taxas e Custos.")
+        st.markdown("### Simulador de Cenários")
+        st.caption("Simule alterações mínimas nas diversas variáveis e veja o impacto na Cota Jr.")
         
         # Variáveis globais de referência (Cenário Base - Diário)
         rec_dia_atual = receita_total_dia
         rec_cart_dia_atual = receita_carteira_dia # Nova referência para o delta da receita
         res_jr_dia_atual = resultado_junior_dia
         ret_jr_aa_atual = retorno_anualizado_junior
+
+        # Sincroniza os valores iniciais do simulador com o que estÇá na sidebar
+        sim_base_defaults = {
+            "sim_aloc_rec": float(pct_recebiveis * 100),
+            "s_tx_c": float(taxa_carteira_am_pct),
+            "s_tx_cx": float(cdi_aa * 100),
+            "s_spr_sr": float(spread_senior_aa_pct),
+            "s_spr_mz": float(spread_mezz_aa_pct),
+            "s_var_cf": 0.0,
+            "s_var_or": 0.0,
+            "s_pdd_m": 1.0,
+        }
+        base_signature = tuple(sim_base_defaults.items())
+        if st.session_state.get("sim_base_signature") != base_signature:
+            for k, v in sim_base_defaults.items():
+                st.session_state[k] = v
+            st.session_state["sim_base_signature"] = base_signature
         
         # ========== PAINEL DE CONTROLE ==========
         st.markdown('<div class="section-header"> Painel de Controle</div>', unsafe_allow_html=True)
@@ -3190,37 +3207,92 @@ with tab_rating:
 
 
 with tab_whiteboard:
-    st.header("Whiteboard – Anotações do Gestor")
+    st.header("📝 Whiteboard – Anotações do Gestor")
 
     st.markdown(
         """
-        Use este quadro para rascunhar cenários, hipóteses de stress, observações de comitê, 
+        Use este quadro para rascunhar cenários, hipóteses de stress, observações de comitê 
         ou qualquer anotação rápida. Funciona com mouse, dedo ou caneta do tablet.
         """
     )
 
+    # Escolha da ferramenta: Caneta ou Borracha
+    cols_tools = st.columns([1, 1, 2])
+    with cols_tools[0]:
+        modo = st.radio(
+            "Ferramenta",
+            ["Caneta", "Borracha"],
+            horizontal=True,
+        )
+
+    with cols_tools[1]:
+        stroke_width = st.slider("Espessura do traço", 1, 15, 3)
+
+    # Define cor do traço: preto para caneta, branco para borracha (mesma cor do fundo)
+    if modo == "Caneta":
+        stroke_color = "#000000"  # preto
+    else:
+        stroke_color = "#FFFFFF"  # borracha: "desenha" na cor do fundo
+
+    st.markdown("---")
+
     # Canvas de desenho
     canvas_result = st_canvas(
-        fill_color="rgba(0, 0, 0, 0)",   # sem preenchimento interno
-        stroke_width=3,
-        stroke_color="#000000",
+        fill_color="rgba(0, 0, 0, 0)",      # sem preenchimento interno
+        stroke_width=stroke_width,
+        stroke_color=stroke_color,
         background_color="#FFFFFF",
         width=1000,
         height=600,
-        drawing_mode="freedraw",         # desenho livre
+        drawing_mode="freedraw",            # desenho livre
         key="whiteboard_fidc",
     )
 
-    col1, col2 = st.columns([1, 1])
+    st.markdown("---")
 
-    with col1:
+    col_botao_limpar, col_download_png, col_download_pdf = st.columns(3)
+
+    # Botão para limpar o quadro (recarrega a página)
+    with col_botao_limpar:
         if st.button("Limpar quadro"):
             st.rerun()
 
-    with col2:
-        st.info(
-            "Dica: se estiver no tablet, selecione o quadro e use a caneta normalmente. "
-            "Se quiser salvar o desenho, faça um print da tela."
-        )
+    # Só habilita download se houver algo desenhado
+    if canvas_result.image_data is not None:
+        img_array = canvas_result.image_data  # numpy array RGBA
 
+        try:
+            pil_img = Image.fromarray(img_array.astype("uint8"))
 
+            # Download em PNG
+            with col_download_png:
+                buf_png = io.BytesIO()
+                pil_img.save(buf_png, format="PNG")
+                buf_png.seek(0)
+
+                st.download_button(
+                    label="Baixar desenho (PNG)",
+                    data=buf_png,
+                    file_name="whiteboard_fidc.png",
+                    mime="image/png",
+                )
+
+            # Download em PDF
+            with col_download_pdf:
+                # PDF não trabalha com canal alpha, convertemos para RGB
+                pil_img_rgb = pil_img.convert("RGB")
+                buf_pdf = io.BytesIO()
+                pil_img_rgb.save(buf_pdf, format="PDF")
+                buf_pdf.seek(0)
+
+                st.download_button(
+                    label="Baixar desenho (PDF)",
+                    data=buf_pdf,
+                    file_name="whiteboard_fidc.pdf",
+                    mime="application/pdf",
+                )
+
+        except Exception:
+            st.warning("Não foi possível gerar o arquivo para download. Tente desenhar novamente.")
+    else:
+        st.info("Desenhe algo no quadro para habilitar as opções de download.")
