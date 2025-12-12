@@ -4,6 +4,8 @@ import numpy as np
 import plotly.graph_objects as go
 from pathlib import Path
 from streamlit_drawable_canvas import st_canvas
+import io
+from PIL import Image
 
 
 
@@ -595,12 +597,13 @@ perda_lim_sub_pct_recebiveis = (
 # -------------------------------------------------------------------
 # TABS
 # -------------------------------------------------------------------
-tab_estrutura, tab_risco, tab_alvo, tab_dre, tab_rating = st.tabs([
+tab_estrutura, tab_risco, tab_alvo, tab_dre, tab_rating, tab_whiteboard = st.tabs([
     "📊 Estrutura & P&L",
     "🛡️ Gestão de Risco & Stress Test", # Aba unificada
     "🎯 Taxa de Juros & Simulações",
     "📑 DRE Projetado",
-    "⭐ Modelo de Rating"
+    "⭐ Modelo de Rating",
+    "📝 Whiteboard"
 ])
 
 # -------------------------------------------------------------------
@@ -3184,4 +3187,40 @@ with tab_rating:
 
     # chama o dashboard
     rating_dashboard()
+
+
+with tab_whiteboard:
+    st.header("Whiteboard – Anotações do Gestor")
+
+    st.markdown(
+        """
+        Use este quadro para rascunhar cenários, hipóteses de stress, observações de comitê, 
+        ou qualquer anotação rápida. Funciona com mouse, dedo ou caneta do tablet.
+        """
+    )
+
+    # Canvas de desenho
+    canvas_result = st_canvas(
+        fill_color="rgba(0, 0, 0, 0)",   # sem preenchimento interno
+        stroke_width=3,
+        stroke_color="#000000",
+        background_color="#FFFFFF",
+        width=1000,
+        height=600,
+        drawing_mode="freedraw",         # desenho livre
+        key="whiteboard_fidc",
+    )
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        if st.button("Limpar quadro"):
+            st.rerun()
+
+    with col2:
+        st.info(
+            "Dica: se estiver no tablet, selecione o quadro e use a caneta normalmente. "
+            "Se quiser salvar o desenho, faça um print da tela."
+        )
+
 
