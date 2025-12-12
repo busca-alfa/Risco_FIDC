@@ -606,7 +606,7 @@ tab_estrutura, tab_risco, tab_alvo, tab_dre, tab_rating = st.tabs([
 # ABA 1 – ESTRUTURA & P&L (Ajustado: Card de Captação + Waterfall Mensal)
 # -------------------------------------------------------------------
 with tab_estrutura:
-    st.markdown('<div class="section-header">🏗️ Estrutura de Capital</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"> Estrutura de Capital</div>', unsafe_allow_html=True)
 
     # 1. Preparar os dados na ordem correta (Sênior -> Mezz -> Júnior)
     perc_senior = valor_senior / pl_total if pl_total > 0 else 0
@@ -713,7 +713,7 @@ with tab_estrutura:
     st.markdown("---")
     
     # CARDS DE INFORMAÇÕES FINANCEIRAS
-    st.markdown('<div class="section-header">💰 Informações Financeiras</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"> Informações Financeiras</div>', unsafe_allow_html=True)
     
     min_recebiveis_regra = pl_total * 0.67
     
@@ -838,7 +838,7 @@ with tab_estrutura:
 
 
     st.markdown("---")
-    st.markdown('<div class="section-header">📊 P&L Diário do Fundo</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"> P&L Diário do Fundo</div>', unsafe_allow_html=True)
     
 
     col_rec, col_custos_gestora, col_cotas = st.columns(3)
@@ -875,7 +875,7 @@ with tab_estrutura:
     retorno_mensal_senior  = (1 + retorno_anualizado_senior) ** (1/12) - 1
     
     st.markdown("---")
-    st.markdown('<div class="section-header">📈 Retornos Efetivos</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"> Retornos Efetivos</div>', unsafe_allow_html=True)
     
     col_jr, col_mezz, col_sen = st.columns(3)
     
@@ -903,7 +903,7 @@ with tab_estrutura:
     # -----------------------------
     st.markdown("---")
     st.markdown(
-        '<div class="section-header">📊 Análise Gráfica: Waterfall do Resultado</div>',
+        '<div class="section-header"> Análise Gráfica: Waterfall do Resultado</div>',
         unsafe_allow_html=True,
     )
     
@@ -999,7 +999,7 @@ with tab_estrutura:
 # ABA 2 – GESTÃO DE RISCO & STRESS TEST (UNIFICADA E CORRIGIDA)
 # -------------------------------------------------------------------
 with tab_risco:
-    st.markdown('<div class="section-header">🛡️ Gestão de Risco & Stress Test</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"> Gestão de Risco & Stress Test</div>', unsafe_allow_html=True)
 
     # ---- CÁLCULOS DOS KPIs ----
     folga_limite = perda_lim_sub - pdd_base
@@ -1034,7 +1034,7 @@ with tab_risco:
     col_det1, col_det2 = st.columns([1.2, 1])
 
     with col_det1:
-        st.markdown("#### 📊 Distribuição de PDD por Faixa")
+        st.markdown("####  Distribuição de PDD por Faixa")
         
         # --- CORREÇÃO DO ERRO DE ARRAY LENGTH ---
         # Detecta quantas faixas vêm da Sidebar e ajusta os labels dinamicamente
@@ -1072,7 +1072,7 @@ with tab_risco:
 
     # ---- SEÇÃO 3: STRESS TEST DINÂMICO (FLEXÍVEL) ----
     st.markdown("---")
-    st.markdown("### 🧪 Stress Test Dinâmico")
+    st.markdown("###  Stress Test Dinâmico")
     
     if pl_total <= 0:
         st.info("Informe um PL total maior que zero para simular.")
@@ -1274,7 +1274,7 @@ with tab_risco:
 # ABA 3 – ANÁLISE DE SENSIBILIDADE E SIMULAÇÃO (VERSÃO FINAL DEFINITIVA)
 # -------------------------------------------------------------------
 with tab_alvo:
-    st.markdown('<div class="section-header">🎯 Taxa de Juros & Simulações</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"> Taxa de Juros & Simulações</div>', unsafe_allow_html=True)
     
     # Variáveis de apoio (Padronização)
     pct_caixa_aplicado_atual = 1.0 
@@ -1290,11 +1290,11 @@ with tab_alvo:
     # SUB-ABA 0: SIMULADOR DE TAXA UNITÁRIO (SEU CÓDIGO ORIGINAL)
     # ============================================================
     with subtab_sim_taxa:
-        st.markdown("### 💰 Simulador de Taxa do Empréstimo")
+        st.markdown("###  Simulador de Taxa do Empréstimo")
         st.caption("Calcule a taxa efetiva considerando deságio (calculado pela taxa), TAC, mora/multa e PDD como redutor de rentabilidade")
         
         # ========== SEÇÃO 1: PARÂMETROS DE ENTRADA ==========
-        st.markdown('<div class="section-header">📋 Parâmetros da Operação</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header"> Parâmetros da Operação</div>', unsafe_allow_html=True)
         
         col_a, col_b, col_c = st.columns(3)
         
@@ -1370,7 +1370,7 @@ with tab_alvo:
         
         # ========== RESULTADOS ==========
         st.markdown("---")
-        st.markdown('<div class="section-header">📊 Resultados da Simulação</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header"> Resultados da Simulação</div>', unsafe_allow_html=True)
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Deságio", f"{desagio_pct:.2f}%", delta=format_brl(desagio_valor), delta_color="off")
         c2.metric("Desembolso Líquido", format_brl(desembolso_liquido), delta=f"TAC: -{format_brl(tac_val)}", delta_color="inverse")
@@ -1387,7 +1387,7 @@ with tab_alvo:
 
         # Pizza Chart
         st.markdown("---")
-        st.markdown('<div class="section-header">🥧 Composição das Receitas</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header"> Composição das Receitas</div>', unsafe_allow_html=True)
         col_p1, col_p2 = st.columns([1.5, 1])
         with col_p1:
             receitas_componentes = {'Deságio': desagio_valor, 'TAC': tac_val, 'Mora/Multa': penalidade_total}
@@ -1406,7 +1406,7 @@ with tab_alvo:
         
         # Cenários de Pagamento
         st.markdown("---")
-        st.markdown('<div class="section-header">🎯 Comparação de Cenários de Pagamento</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header"> Comparação de Cenários de Pagamento</div>', unsafe_allow_html=True)
         # Cenários por faixa de PDD (usando as faixas da sidebar)
         cenarios_pag = [
             {'nome': '✅ No Prazo', 'dias': 0, 'pdd': 0.0, 'desc': 'Pontual'},
@@ -1450,7 +1450,7 @@ with tab_alvo:
     # SUB-ABA 1 (ou 2): SIMULADOR DE CENÁRIOS (AJUSTADO)
     # ============================================================
     with subtab_cenarios:
-        st.markdown("### 🎛️ Simulador de Estratégia (Alocação & Taxas)")
+        st.markdown("### Simulador de Estratégia (Alocação & Taxas)")
         st.caption("Simule o impacto de alterar o **Volume da Carteira** (Alocação), Taxas e Custos.")
         
         # Variáveis globais de referência (Cenário Base - Diário)
@@ -1460,14 +1460,14 @@ with tab_alvo:
         ret_jr_aa_atual = retorno_anualizado_junior
         
         # ========== PAINEL DE CONTROLE ==========
-        st.markdown('<div class="section-header">⚙️ Painel de Controle</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header"> Painel de Controle</div>', unsafe_allow_html=True)
         col_sim1, col_sim2, col_sim3 = st.columns(3)
 
         with col_sim1:
-            st.markdown("**💰 Receitas & Alocação:**")
+            st.markdown("**Receitas & Alocação:**")
             # Slider de ALOCAÇÃO DE VOLUME
             pct_alocacao_sim = st.slider(
-                "🎯 % do PL em Recebíveis",
+                " % do PL em Recebíveis",
                 min_value=0.0, max_value=100.0,
                 value=float(pct_recebiveis * 100), step=1.0,
                 format="%.0f%%", key="sim_aloc_rec",
@@ -1478,12 +1478,13 @@ with tab_alvo:
             taxa_caixa_sim = st.number_input("Taxa Caixa (% a.a.)", 0.0, 20.0, float(cdi_aa * 100), 0.25, key="s_tx_cx") / 100
         
         with col_sim2:
-            st.markdown("**💸 Custos das Cotas:**")
+            st.markdown("**Custos das Cotas:**")
             spr_sr_sim = st.number_input("Spread Sênior", 0.0, 10.0, float(spread_senior_aa_pct), 0.25, key="s_spr_sr") / 100
             spr_mz_sim = st.number_input("Spread Mezz", 0.0, 10.0, float(spread_mezz_aa_pct), 0.25, key="s_spr_mz") / 100
             
-            tx_sr_sim_d = anual_to_diario(cdi_aa + spr_sr_sim)
-            tx_mz_sim_d = anual_to_diario(cdi_aa + spr_mz_sim)
+            # Alinha com o cenÇ­rio base: juros lineares /252
+            tx_sr_sim_d = (cdi_aa + spr_sr_sim) / 252.0
+            tx_mz_sim_d = (cdi_aa + spr_mz_sim) / 252.0
             
             # Sliders de Variação de Custos/Receitas Fixas (Solicitados anteriormente)
             st.markdown("---")
@@ -1496,7 +1497,7 @@ with tab_alvo:
             custo_adm_gestao_sim = custo_adm_dia + custo_gestao_dia + custo_outros_sim
         
         with col_sim3:
-            st.markdown("**⚠️ Risco (PDD):**")
+            st.markdown("**Risco (PDD):**")
             pdd_mul_sim = st.slider("Multiplicador de PDD", 0.0, 5.0, 1.0, 0.1, key="s_pdd_m")
             
             # Visualização da Estrutura Simulada
@@ -1535,7 +1536,7 @@ with tab_alvo:
 
         # ========== RESULTADOS ==========
         st.markdown("---")
-        st.markdown('<div class="section-header">📊 Resultados da Simulação</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header"> Resultados da Simulação</div>', unsafe_allow_html=True)
         
         k1, k2, k3, k4 = st.columns(4)
         
@@ -1578,7 +1579,7 @@ with tab_alvo:
         st.markdown("---")
         c_head, c_sel = st.columns([3, 1])
         with c_head:
-            st.markdown("#### 🆚 Comparação: Cenário Base vs Simulado")
+            st.markdown('<div class="section-header"> Resultados da Simulação</div>', unsafe_allow_html=True)
         with c_sel:
             visao_tempo = st.radio("Visualizar em:", ["Diário", "Mensal", "Anual"], horizontal=True, key="vis_tempo_sim")
 
@@ -1637,7 +1638,7 @@ with tab_alvo:
         # SUB-ABA 3: TAXA-ALVO DO FUNDO (CÁLCULO POR CUSTO IMPLÍCITO)
         # ============================================================
         with subtab_taxa_alvo:
-            st.markdown("### 🎯 Calculadora de Taxa-Alvo")
+            st.markdown("### Calculadora de Taxa-Alvo")
         
             dias_uteis_ano = 252
             dias_uteis_mes = dias_uteis_ano / 12  # ~21 dias úteis
@@ -1715,7 +1716,7 @@ with tab_alvo:
             st.markdown("---")
         
             # --- GRÁFICO DE EQUILÍBRIO: ROE vs Taxa Necessária ---
-            st.markdown("#### 📊 Curva de Equilíbrio: ROE vs Taxa Necessária")
+            st.markdown("#### Curva de Equilíbrio: ROE vs Taxa Necessária")
         
             # Faixa de ROE em torno da meta
             roe_min = max(0.0, target_roe_jr - 20)
@@ -1781,7 +1782,8 @@ with tab_alvo:
 with tab_dre:
     from io import BytesIO  # para exportar Excel
 
-    st.subheader("DRE Projetado")
+    
+    st.markdown('<div class="section-header">DRE Projetado </div>', unsafe_allow_html=True)
 
     # ---------------------------
     # TABELA EDITÁVEL DE PARÂMETROS POR MÊS
@@ -3181,5 +3183,4 @@ with tab_rating:
 
     # chama o dashboard
     rating_dashboard()
-
 
