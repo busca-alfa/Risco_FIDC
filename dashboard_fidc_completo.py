@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from pathlib import Path
+from streamlit_drawable_canvas import st_canvas
 
 
 
