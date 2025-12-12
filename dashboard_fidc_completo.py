@@ -58,12 +58,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-LOGO_PATH = Path(r"C:\VS Code Projects\Risco_FIDC\Risco_FIDC\logo_rios_3d_redondo.png")
-col_logo, col_title = st.columns([0.12, 0.88])
-with col_logo:
-    st.image(str(LOGO_PATH), width=350)
-with col_title:
-    st.title("FIDC - Estrutura de Cotas e P&L Diário")
+
+st.title("FIDC - Estrutura de Cotas e P&L Diário")
 st.markdown(
     """
     Modelo econômico-financeiro para analisar a estrutura de cotas de um FIDC, 
