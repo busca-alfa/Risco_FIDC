@@ -686,15 +686,13 @@ perda_lim_sub_pct_recebiveis = (
 # -------------------------------------------------------------------
 # TABS
 # -------------------------------------------------------------------
-tab_cadastro, tab_estrutura, tab_risco, tab_alvo, tab_dre, tab_rating, tab_whiteboard = st.tabs([
+tab_cadastro, tab_estrutura, tab_risco, tab_alvo, tab_dre, tab_rating = st.tabs([
     'Cadastro e Controle de FIDCs',
     'Estrutura & P&L',
     'Gestao de Risco & Stress Test',
     'Taxa de Juros & Simulacoes',
     'DRE Projetado',
-    'Modelo de Rating',
-    'Whiteboard'
-])
+    'Modelo de Rating',])
 
 # -------------------------------------------------------------------
 # -------------------------------------------------------------------
@@ -702,7 +700,7 @@ tab_cadastro, tab_estrutura, tab_risco, tab_alvo, tab_dre, tab_rating, tab_white
 # -------------------------------------------------------------------
 with tab_cadastro:
     st.markdown("### Cadastro e Controle de FIDCs")
-    st.caption("Selecione um fundo para carregar os par??metros ou salve/atualize o cadastro com os valores da sidebar.")
+    st.caption("Selecione um fundo para carregar os parâmetros ou salve/atualize o cadastro com os valores da sidebar.")
 
     store = st.session_state["fidc_store"]
     current_selected = st.session_state.get("selected_fidc")
@@ -763,9 +761,11 @@ with tab_cadastro:
     # Botao para baixar relatorio resumido
     nome_relatorio = nome_fundo.strip() or "Fundo"
     nome_slug = ''.join(ch if ch.isalnum() else '_' for ch in nome_relatorio) or 'fundo'
+    from datetime import datetime
+    ts = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
     resumo = f"""Relatorio Resumido do FIDC
-
+Gerado em: {ts}
 Fundo: {nome_relatorio}
 
 Estrutura de Cotas:
@@ -773,10 +773,11 @@ Estrutura de Cotas:
 - Cota Junior: {format_brl(valor_junior)}
 - Cota Mezzanino: {format_brl(valor_mezz)}
 - Cota Senior: {format_brl(valor_senior)}
-- % PL em Recebiveis: {pct_recebiveis*100:.2f}%
+- Subordinacao Minima: {sub_min_pct:.2f}%
+- Subordinacao Atual: {format_pct(valor_junior / pl_total)}
 
 Taxas e Spreads:
-- Taxa carteira: {taxa_carteira_am_pct:.2f}% a.m.
+- Taxa media da carteira: {taxa_carteira_am_pct:.2f}% a.m.
 - CDI: {cdi_aa_pct:.2f}% a.a.
 - Spread Senior sobre CDI: {spread_senior_aa_pct:.2f}% (taxa total: {(taxa_senior_aa*100):.2f}% a.a.)
 - Spread Mezz sobre CDI: {spread_mezz_aa_pct:.2f}% (taxa total: {(taxa_mezz_aa*100):.2f}% a.a.)
@@ -787,7 +788,8 @@ Taxas e Spreads:
 
 Risco e PDD:
 - PDD ponderada: {pdd_ponderada_view:.2f}%
-- Incluir PDD no P&L: {('Sim' if incluir_pdd else 'Nao')}
+- PDD Atual (R$): {format_brl(pdd_dia*252)}
+- Limite de perda por subordinacao: {format_brl(perda_lim_sub)}
 
 Resultados atuais (anualizados):
 - Receita Carteira (ano): {format_brl(receita_carteira_dia*252)}
@@ -795,97 +797,79 @@ Resultados atuais (anualizados):
 - Outras Receitas (ano): {format_brl(receita_outros_dia*252)}
 - Custo Cotas (ano): {format_brl((custo_senior_dia+custo_mezz_dia)*252)}
 - Custos Fixos (ano): {format_brl((custo_adm_dia+custo_gestao_dia+custo_outros_dia)*252)}
-- PDD (ano): {format_brl(pdd_dia*252)}
 - Resultado Junior (ano): {format_brl(resultado_junior_dia*252)}
 - ROE Junior: {(retorno_anualizado_junior*100):.2f}% a.a.
-
-Outros indicadores:
-- Subordinacao minima Junior (% PL): {sub_min_pct:.2f}%
-- Limite de perda por subordinacao: {format_brl(perda_lim_sub)}
 """
 
-    # Gera PDF usando fpdf2 (instale com: pip install fpdf2). Gr?ficos usam kaleido.
+    # Gera PDF usando fpdf2 (instale com: pip install fpdf2)
     pdf_bytes = None
     try:
         from fpdf import FPDF  # type: ignore
-        import plotly.graph_objects as go
-        import io
 
         pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Helvetica", size=11)
         pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        pdf.set_left_margin(15)
+        pdf.set_right_margin(15)
+        usable_width = pdf.w - pdf.l_margin * 2
 
-        # Escreve o texto completo de uma vez
-        pdf.multi_cell(0, 8, resumo)
+        # helper para escrever blocos com opcional negrito e resetar X
+        def write_block(text, bold=False, size=11, ln_height=6, gap=2):
+            style = "B" if bold else ""
+            pdf.set_font("Helvetica", style=style, size=size)
+            pdf.set_x(pdf.l_margin)
+            pdf.multi_cell(usable_width, ln_height, text)
+            if gap:
+                pdf.ln(gap)
 
-        # Gr?ficos resumidos
-        images = []
-        try:
-            # Estrutura de cotas
-            fig_estr = go.Figure(
-                go.Bar(
-                    x=["Senior", "Mezz", "Junior"],
-                    y=[valor_senior, valor_mezz, valor_junior],
-                    marker_color=["#4e79a7", "#f28e2b", "#e15759"],
-                    text=[format_brl(valor_senior), format_brl(valor_mezz), format_brl(valor_junior)],
-                    textposition="auto",
-                )
-            )
-            fig_estr.update_layout(title="Estrutura de Cotas", margin=dict(l=10, r=10, t=40, b=10), height=350)
-            img_estr = fig_estr.to_image(format="png", engine="kaleido", scale=2)
-            images.append(("Estrutura de Cotas", img_estr))
+        write_block("Relatorio Resumido do FIDC", bold=True, size=12)
+        write_block(f"Gerado em: {ts}", gap=1)
+        write_block(f"Fundo: {nome_relatorio}", bold=True, gap=3)
 
-            # Receitas e custos anuais
-            fig_res = go.Figure()
-            fig_res.add_trace(
-                go.Bar(
-                    name="Receitas",
-                    x=["Carteira", "Caixa", "Outras"],
-                    y=[receita_carteira_dia * 252, receita_caixa_dia * 252, receita_outros_dia * 252],
-                    marker_color="#4e79a7",
-                )
-            )
-            fig_res.add_trace(
-                go.Bar(
-                    name="Custos",
-                    x=["Cotas", "Fixos", "PDD"],
-                    y=[(custo_senior_dia + custo_mezz_dia) * 252, (custo_adm_dia + custo_gestao_dia + custo_outros_dia) * 252, pdd_dia * 252],
-                    marker_color="#e15759",
-                )
-            )
-            fig_res.update_layout(
-                barmode="group",
-                title="Receitas e Custos (ano)",
-                margin=dict(l=10, r=10, t=40, b=10),
-                height=350,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
-            )
-            img_res = fig_res.to_image(format="png", engine="kaleido", scale=2)
-            images.append(("Receitas e Custos (ano)", img_res))
-        except Exception as e_img:
-            st.warning(f"Para incluir gr?ficos no PDF, instale tamb?m 'kaleido'. Detalhe: {e_img}")
+        write_block("Estrutura de Cotas:", bold=True)
+        write_block(
+            f"- PL Total: {format_brl(pl_total)}\n"
+            f"- Cota Junior: {format_brl(valor_junior)}\n"
+            f"- Cota Mezzanino: {format_brl(valor_mezz)}\n"
+            f"- Cota Senior: {format_brl(valor_senior)}\n"
+            f"- Subordinacao Minima: {sub_min_pct:.2f}%\n"
+            f"- Subordinacao Atual: {format_pct(valor_junior / pl_total)}"
+        , gap=3)
 
-        for titulo, img_bytes in images:
-            pdf.add_page()
-            pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(0, 10, titulo, ln=1)
-            pdf.image(io.BytesIO(img_bytes), w=180)
+        write_block("Taxas e Spreads:", bold=True)
+        write_block(
+            f"- Taxa media da carteira: {taxa_carteira_am_pct:.2f}% a.m.\n"
+            f"- CDI: {cdi_aa_pct:.2f}% a.a.\n"
+            f"- Spread Senior sobre CDI: {spread_senior_aa_pct:.2f}% (taxa total: {(taxa_senior_aa*100):.2f}% a.a.)\n"
+            f"- Spread Mezz sobre CDI: {spread_mezz_aa_pct:.2f}% (taxa total: {(taxa_mezz_aa*100):.2f}% a.a.)\n"
+            f"- Taxa Adm: {taxa_adm_aa_pct:.2f}% a.a.\n"
+            f"- Taxa Gestao: {taxa_gestao_aa_pct:.2f}% a.a.\n"
+            f"- Outros custos mensais: {format_brl(outros_custos_mensais)}\n"
+            f"- Outras receitas mensais: {format_brl(outros_receitas_mensais)}"
+        , gap=3)
+
+        write_block("Risco e PDD:", bold=True)
+        write_block(
+            f"- PDD ponderada: {pdd_ponderada_view:.2f}%\n"
+            f"- PDD Atual (R$): {format_brl(pdd_dia*252)}\n"
+            f"- Limite de perda por subordinacao: {format_brl(perda_lim_sub)}"
+        , gap=3)
+
+        write_block("Resultados atuais (anualizados):", bold=True)
+        write_block(
+            f"- Receita Carteira (ano): {format_brl(receita_carteira_dia*252)}\n"
+            f"- Receita Caixa (ano): {format_brl(receita_caixa_dia*252)}\n"
+            f"- Outras Receitas (ano): {format_brl(receita_outros_dia*252)}\n"
+            f"- Custo Cotas (ano): {format_brl((custo_senior_dia+custo_mezz_dia)*252)}\n"
+            f"- Custos Fixos (ano): {format_brl((custo_adm_dia+custo_gestao_dia+custo_outros_dia)*252)}\n"
+            f"- Resultado Junior (ano): {format_brl(resultado_junior_dia*252)}\n"
+            f"- ROE Junior: {(retorno_anualizado_junior*100):.2f}% a.a."
+        )
 
         _out = pdf.output(dest="S")
         pdf_bytes = _out.encode("latin-1") if isinstance(_out, str) else bytes(_out)
     except Exception as e:
         st.warning(f"Para exportar em PDF, instale o pacote 'fpdf2' (pip install fpdf2). Detalhe: {e}")
-
-    except Exception as e:
-        st.warning(f"Para exportar em PDF, instale o pacote 'fpdf2' (pip install fpdf2). Detalhe: {e}")
-
-    st.download_button(
-        "Baixar Relatorio (TXT)",
-        resumo.encode("utf-8"),
-        file_name=f"relatorio_{nome_slug}.txt",
-        mime="text/plain"
-    )
 
     if pdf_bytes:
         st.download_button(

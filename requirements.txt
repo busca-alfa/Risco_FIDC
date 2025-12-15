@@ -7,4 +7,3 @@ openpyxl
 streamlit-drawable-canvas
 Pillow
 fpdf2
-kaleido
