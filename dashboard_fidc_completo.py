@@ -804,17 +804,79 @@ Outros indicadores:
 - Limite de perda por subordinacao: {format_brl(perda_lim_sub)}
 """
 
-    # Gera PDF usando fpdf2 (instale com: pip install fpdf2)
+    # Gera PDF usando fpdf2 (instale com: pip install fpdf2). Gr?ficos usam kaleido.
     pdf_bytes = None
     try:
         from fpdf import FPDF  # type: ignore
+        import plotly.graph_objects as go
+        import io
 
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Helvetica", size=12)
-        for line in resumo.splitlines():
-            pdf.multi_cell(0, 8, line)
-        pdf_bytes = pdf.output(dest="S").encode("latin-1")
+        pdf.set_font("Helvetica", size=11)
+        pdf.set_auto_page_break(auto=True, margin=15)
+
+        # Escreve o texto completo de uma vez
+        pdf.multi_cell(0, 8, resumo)
+
+        # Gr?ficos resumidos
+        images = []
+        try:
+            # Estrutura de cotas
+            fig_estr = go.Figure(
+                go.Bar(
+                    x=["Senior", "Mezz", "Junior"],
+                    y=[valor_senior, valor_mezz, valor_junior],
+                    marker_color=["#4e79a7", "#f28e2b", "#e15759"],
+                    text=[format_brl(valor_senior), format_brl(valor_mezz), format_brl(valor_junior)],
+                    textposition="auto",
+                )
+            )
+            fig_estr.update_layout(title="Estrutura de Cotas", margin=dict(l=10, r=10, t=40, b=10), height=350)
+            img_estr = fig_estr.to_image(format="png", engine="kaleido", scale=2)
+            images.append(("Estrutura de Cotas", img_estr))
+
+            # Receitas e custos anuais
+            fig_res = go.Figure()
+            fig_res.add_trace(
+                go.Bar(
+                    name="Receitas",
+                    x=["Carteira", "Caixa", "Outras"],
+                    y=[receita_carteira_dia * 252, receita_caixa_dia * 252, receita_outros_dia * 252],
+                    marker_color="#4e79a7",
+                )
+            )
+            fig_res.add_trace(
+                go.Bar(
+                    name="Custos",
+                    x=["Cotas", "Fixos", "PDD"],
+                    y=[(custo_senior_dia + custo_mezz_dia) * 252, (custo_adm_dia + custo_gestao_dia + custo_outros_dia) * 252, pdd_dia * 252],
+                    marker_color="#e15759",
+                )
+            )
+            fig_res.update_layout(
+                barmode="group",
+                title="Receitas e Custos (ano)",
+                margin=dict(l=10, r=10, t=40, b=10),
+                height=350,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+            )
+            img_res = fig_res.to_image(format="png", engine="kaleido", scale=2)
+            images.append(("Receitas e Custos (ano)", img_res))
+        except Exception as e_img:
+            st.warning(f"Para incluir gr?ficos no PDF, instale tamb?m 'kaleido'. Detalhe: {e_img}")
+
+        for titulo, img_bytes in images:
+            pdf.add_page()
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.cell(0, 10, titulo, ln=1)
+            pdf.image(io.BytesIO(img_bytes), w=180)
+
+        _out = pdf.output(dest="S")
+        pdf_bytes = _out.encode("latin-1") if isinstance(_out, str) else bytes(_out)
+    except Exception as e:
+        st.warning(f"Para exportar em PDF, instale o pacote 'fpdf2' (pip install fpdf2). Detalhe: {e}")
+
     except Exception as e:
         st.warning(f"Para exportar em PDF, instale o pacote 'fpdf2' (pip install fpdf2). Detalhe: {e}")
 
