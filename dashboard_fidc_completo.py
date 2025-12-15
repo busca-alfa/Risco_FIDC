@@ -3,9 +3,61 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from pathlib import Path
+import json
 from streamlit_drawable_canvas import st_canvas
 import io
 from PIL import Image
+
+FIDC_STORE_PATH = Path(__file__).parent / "fidcs.json"
+
+
+def load_fidc_store():
+    if FIDC_STORE_PATH.exists():
+        try:
+            with open(FIDC_STORE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {}
+
+
+def save_fidc_store(store: dict):
+    try:
+        with open(FIDC_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(store, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        st.error(f"Erro ao salvar cadastro: {e}")
+
+
+def get_param(name, default):
+    return st.session_state.get("fidc_params", {}).get(name, default)
+
+
+def apply_fidc_to_state(params: dict):
+    for key, val in params.items():
+        st.session_state[key] = val
+
+
+if "fidc_store" not in st.session_state:
+    st.session_state["fidc_store"] = load_fidc_store()
+
+if "selected_fidc" not in st.session_state:
+    st.session_state["selected_fidc"] = None
+
+if "fidc_params" not in st.session_state:
+    st.session_state["fidc_params"] = {}
+
+if "last_loaded_fidc" not in st.session_state:
+    st.session_state["last_loaded_fidc"] = None
+
+if st.session_state["selected_fidc"] is None and st.session_state["fidc_store"]:
+    first_key = next(iter(st.session_state["fidc_store"].keys()))
+    st.session_state["selected_fidc"] = first_key
+    st.session_state["fidc_params"] = st.session_state["fidc_store"][first_key]
+    apply_fidc_to_state(st.session_state["fidc_params"])
+    st.session_state["last_loaded_fidc"] = first_key
 
 
 
@@ -103,21 +155,21 @@ st.sidebar.markdown("---")
 valor_junior = st.sidebar.number_input(
     "Valor da Cota Júnior (R$)",
     min_value=0.0,
-    value=10_000_000.0,
+    value=get_param("valor_junior", 10_000_000.0),
     step=500_000.0,
     format="%.2f"
 )
 valor_mezz = st.sidebar.number_input(
     "Valor da Cota Mezzanino (R$)",
     min_value=0.0,
-    value=10_000_000.0,
+    value=get_param("valor_mezz", 10_000_000.0),
     step=500_000.0,
     format="%.2f"
 )
 valor_senior = st.sidebar.number_input(
     "Valor da Cota Sênior (R$)",
     min_value=0.0,
-    value=10_000_000.0,
+    value=get_param("valor_senior", 10_000_000.0),
     step=500_000.0,
     format="%.2f"
 )
@@ -130,7 +182,7 @@ sub_min_pct = st.sidebar.number_input(
     "Índice mínimo de subordinação da Cota Júnior (% do PL)",
     min_value=0.0,
     max_value=100.0,
-    value=20.0,
+    value=get_param("sub_min_pct", 20.0),
     step=1.0,
     format="%.2f"
 )
@@ -142,7 +194,7 @@ st.sidebar.markdown("---")
 cdi_aa_pct = st.sidebar.number_input(
     "CDI (% a.a.)",
     min_value=0.0,
-    value=15.0,
+    value=get_param("cdi_aa_pct", 15.0),
     step=0.25,
     format="%.2f"
 )
@@ -153,18 +205,19 @@ cdi_am = (1 + cdi_aa) ** (1/12) - 1
 taxa_carteira_am_pct = st.sidebar.number_input(
     "Taxa da carteira (% a.m. sobre recebíveis)",
     min_value=0.0,
-    value=2.35,
+    value=get_param("taxa_carteira_am_pct", 2.35),
     step=0.05,
     format="%.2f"
 )
 taxa_carteira_am = taxa_carteira_am_pct / 100.0
 taxa_carteira_diaria = mensal_to_diario(taxa_carteira_am)
 
+_pct_rec_default = int(get_param("pct_recebiveis_pct", 80))
 pct_recebiveis = st.sidebar.slider(
     "Percentual do PL em recebíveis (%)",
     min_value=0,
     max_value=100,
-    value=80,
+    value=_pct_rec_default,
     step=1
 ) / 100.0
 
@@ -174,14 +227,14 @@ st.sidebar.markdown("---")
 spread_senior_aa_pct = st.sidebar.number_input(
     "Spread da Cota Sênior (% a.a. sobre CDI)",
     min_value=0.0,
-    value=5.0,
+    value=get_param("spread_senior_aa_pct", 5.0),
     step=0.25,
     format="%.2f"
 )
 spread_mezz_aa_pct = st.sidebar.number_input(
     "Spread da Cota Mezzanino (% a.a. sobre CDI)",
     min_value=0.0,
-    value=6.5,
+    value=get_param("spread_mezz_aa_pct", 6.5),
     step=0.25,
     format="%.2f"
 )
@@ -201,14 +254,14 @@ st.sidebar.markdown("---")
 taxa_adm_aa_pct = st.sidebar.number_input(
     "Taxa de Administração (% a.a. sobre PL)",
     min_value=0.0,
-    value=0.3,
+    value=get_param("taxa_adm_aa_pct", 0.3),
     step=0.05,
     format="%.2f"
 )
 taxa_gestao_aa_pct = st.sidebar.number_input(
     "Taxa de Gestão (% a.a. sobre PL)",
     min_value=0.0,
-    value=0.5,
+    value=get_param("taxa_gestao_aa_pct", 0.5),
     step=0.05,
     format="%.2f"
 )
@@ -221,7 +274,7 @@ taxa_gestao_diaria = anual_to_diario(taxa_gestao_aa)
 outros_custos_mensais = st.sidebar.number_input(
     "Outros custos fixos (R$ / mês)",
     min_value=0.0,
-    value=100_000.0,
+    value=get_param("outros_custos_mensais", 100_000.0),
     step=1_000.0,
     format="%.2f"
 )
@@ -231,7 +284,7 @@ custo_outros_dia = outros_custos_mensais * 12.0 / 252.0
 outros_receitas_mensais = st.sidebar.number_input(
     "Outras receitas (R$ / mês)",
     min_value=0.0,
-    value=150_000.0,
+    value=get_param("outros_receitas_mensais", 150_000.0),
     step=1_000.0,
     format="%.2f"
 )
@@ -347,8 +400,44 @@ st.sidebar.metric(
 
 st.sidebar.markdown("---")
 incluir_pdd = st.sidebar.checkbox(
-    "Incluir PDD no P&L e DRE", value=True
+    "Incluir PDD no P&L e DRE", value=bool(get_param("incluir_pdd", True))
 )
+
+current_params = {
+    "valor_junior": valor_junior,
+    "valor_mezz": valor_mezz,
+    "valor_senior": valor_senior,
+    "sub_min_pct": sub_min_pct,
+    "cdi_aa_pct": cdi_aa_pct,
+    "taxa_carteira_am_pct": taxa_carteira_am_pct,
+    "pct_recebiveis_pct": pct_recebiveis * 100.0,
+    "spread_senior_aa_pct": spread_senior_aa_pct,
+    "spread_mezz_aa_pct": spread_mezz_aa_pct,
+    "taxa_adm_aa_pct": taxa_adm_aa_pct,
+    "taxa_gestao_aa_pct": taxa_gestao_aa_pct,
+    "outros_custos_mensais": outros_custos_mensais,
+    "outros_receitas_mensais": outros_receitas_mensais,
+    "pct_0_30": pct_0_30,
+    "prov_0_30": prov_0_30,
+    "pct_31_60": pct_31_60,
+    "prov_31_60": prov_31_60,
+    "pct_61_90": pct_61_90,
+    "prov_61_90": prov_61_90,
+    "pct_91_120": pct_91_120,
+    "prov_91_120": prov_91_120,
+    "pct_121_150": pct_121_150,
+    "prov_121_150": prov_121_150,
+    "pct_151_180": pct_151_180,
+    "prov_151_180": prov_151_180,
+    "pct_181_240": pct_181_240,
+    "prov_181_240": prov_181_240,
+    "pct_241_300": pct_241_300,
+    "prov_241_300": prov_241_300,
+    "pct_300p": pct_300p,
+    "prov_300p": prov_300p,
+    "incluir_pdd": incluir_pdd,
+}
+st.session_state["fidc_params"] = current_params
 
 # -------------------------------------------------------------------
 # CÁLCULOS PRINCIPAIS – CENÁRIO ATUAL
@@ -597,14 +686,79 @@ perda_lim_sub_pct_recebiveis = (
 # -------------------------------------------------------------------
 # TABS
 # -------------------------------------------------------------------
-tab_estrutura, tab_risco, tab_alvo, tab_dre, tab_rating, tab_whiteboard = st.tabs([
-    "📊 Estrutura & P&L",
-    "🛡️ Gestão de Risco & Stress Test", # Aba unificada
-    "🎯 Taxa de Juros & Simulações",
-    "📑 DRE Projetado",
-    "⭐ Modelo de Rating",
-    "📝 Whiteboard"
+tab_cadastro, tab_estrutura, tab_risco, tab_alvo, tab_dre, tab_rating, tab_whiteboard = st.tabs([
+    'Cadastro e Controle de FIDCs',
+    'Estrutura & P&L',
+    'Gestao de Risco & Stress Test',
+    'Taxa de Juros & Simulacoes',
+    'DRE Projetado',
+    'Modelo de Rating',
+    'Whiteboard'
 ])
+
+# -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# ABA 0 ? CADASTRO E CONTROLE DE FIDCs
+# -------------------------------------------------------------------
+with tab_cadastro:
+    st.markdown("### Cadastro e Controle de FIDCs")
+    st.caption("Selecione um fundo para carregar os par??metros ou salve/atualize o cadastro com os valores da sidebar.")
+
+    store = st.session_state["fidc_store"]
+    current_selected = st.session_state.get("selected_fidc")
+
+    options = ["(Novo)"] + sorted(store.keys())
+    default_index = options.index(current_selected) if current_selected in options else 0
+    escolha = st.selectbox("Fundo cadastrado", options, index=default_index)
+
+    if escolha != st.session_state.get("last_loaded_fidc"):
+        if escolha != "(Novo)":
+            st.session_state["selected_fidc"] = escolha
+            st.session_state["fidc_params"] = store.get(escolha, {})
+            st.session_state["last_loaded_fidc"] = escolha
+        else:
+            st.session_state["selected_fidc"] = None
+            st.session_state["fidc_params"] = {}
+            st.session_state["last_loaded_fidc"] = "(Novo)"
+        st.rerun()
+
+    nome_fundo = st.text_input(
+        "Nome do fundo",
+        value="" if escolha == "(Novo)" else escolha,
+        placeholder="Ex.: FIDC Alpha"
+    )
+
+    col_save, col_delete = st.columns([2, 1])
+    with col_save:
+        if st.button("Salvar/Atualizar fundo"):
+            nome = nome_fundo.strip()
+            if not nome:
+                st.warning("Informe um nome para o fundo.")
+            else:
+                store[nome] = current_params
+                st.session_state["fidc_store"] = store
+                save_fidc_store(store)
+                st.session_state["selected_fidc"] = nome
+                st.session_state["fidc_params"] = current_params
+                st.session_state["last_loaded_fidc"] = nome
+                st.success(f"Fundo '{nome}' salvo/atualizado.")
+
+    with col_delete:
+        if escolha != "(Novo)" and st.button("Excluir fundo"):
+            if escolha in store:
+                store.pop(escolha, None)
+                st.session_state["fidc_store"] = store
+                save_fidc_store(store)
+                st.session_state["selected_fidc"] = None
+                st.session_state["fidc_params"] = {}
+                st.session_state["last_loaded_fidc"] = None
+                st.success(f"Fundo '{escolha}' removido.")
+
+    if store:
+        st.markdown("#### Fundos cadastrados")
+        st.write(pd.DataFrame({"Fundo": sorted(store.keys())}))
+    else:
+        st.info("Nenhum fundo cadastrado ainda.")
 
 # -------------------------------------------------------------------
 # ABA 1 – ESTRUTURA & P&L (Ajustado: Card de Captação + Waterfall Mensal)
@@ -3204,5 +3358,3 @@ with tab_rating:
 
     # chama o dashboard
     rating_dashboard()
-
-
