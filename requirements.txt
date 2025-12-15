@@ -6,3 +6,4 @@ xlsxwriter
 openpyxl
 streamlit-drawable-canvas
 Pillow
+fpdf2

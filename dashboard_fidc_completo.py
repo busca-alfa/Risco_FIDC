@@ -114,7 +114,7 @@ st.markdown(
 )
 
 
-st.title("FIDC - Estrutura de Cotas e P&L Diário")
+st.title("FIDC - Gestão Econômica e de Riscos")
 st.markdown(
     """
     Modelo econômico-financeiro para analisar a estrutura de cotas de um FIDC, 
@@ -759,6 +759,79 @@ with tab_cadastro:
         st.write(pd.DataFrame({"Fundo": sorted(store.keys())}))
     else:
         st.info("Nenhum fundo cadastrado ainda.")
+
+    # Botao para baixar relatorio resumido
+    nome_relatorio = nome_fundo.strip() or "Fundo"
+    nome_slug = ''.join(ch if ch.isalnum() else '_' for ch in nome_relatorio) or 'fundo'
+
+    resumo = f"""Relatorio Resumido do FIDC
+
+Fundo: {nome_relatorio}
+
+Estrutura de Cotas:
+- PL Total: {format_brl(pl_total)}
+- Cota Junior: {format_brl(valor_junior)}
+- Cota Mezzanino: {format_brl(valor_mezz)}
+- Cota Senior: {format_brl(valor_senior)}
+- % PL em Recebiveis: {pct_recebiveis*100:.2f}%
+
+Taxas e Spreads:
+- Taxa carteira: {taxa_carteira_am_pct:.2f}% a.m.
+- CDI: {cdi_aa_pct:.2f}% a.a.
+- Spread Senior sobre CDI: {spread_senior_aa_pct:.2f}% (taxa total: {(taxa_senior_aa*100):.2f}% a.a.)
+- Spread Mezz sobre CDI: {spread_mezz_aa_pct:.2f}% (taxa total: {(taxa_mezz_aa*100):.2f}% a.a.)
+- Taxa Adm: {taxa_adm_aa_pct:.2f}% a.a.
+- Taxa Gestao: {taxa_gestao_aa_pct:.2f}% a.a.
+- Outros custos mensais: {format_brl(outros_custos_mensais)}
+- Outras receitas mensais: {format_brl(outros_receitas_mensais)}
+
+Risco e PDD:
+- PDD ponderada: {pdd_ponderada_view:.2f}%
+- Incluir PDD no P&L: {('Sim' if incluir_pdd else 'Nao')}
+
+Resultados atuais (anualizados):
+- Receita Carteira (ano): {format_brl(receita_carteira_dia*252)}
+- Receita Caixa (ano): {format_brl(receita_caixa_dia*252)}
+- Outras Receitas (ano): {format_brl(receita_outros_dia*252)}
+- Custo Cotas (ano): {format_brl((custo_senior_dia+custo_mezz_dia)*252)}
+- Custos Fixos (ano): {format_brl((custo_adm_dia+custo_gestao_dia+custo_outros_dia)*252)}
+- PDD (ano): {format_brl(pdd_dia*252)}
+- Resultado Junior (ano): {format_brl(resultado_junior_dia*252)}
+- ROE Junior: {(retorno_anualizado_junior*100):.2f}% a.a.
+
+Outros indicadores:
+- Subordinacao minima Junior (% PL): {sub_min_pct:.2f}%
+- Limite de perda por subordinacao: {format_brl(perda_lim_sub)}
+"""
+
+    # Gera PDF usando fpdf2 (instale com: pip install fpdf2)
+    pdf_bytes = None
+    try:
+        from fpdf import FPDF  # type: ignore
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=12)
+        for line in resumo.splitlines():
+            pdf.multi_cell(0, 8, line)
+        pdf_bytes = pdf.output(dest="S").encode("latin-1")
+    except Exception as e:
+        st.warning(f"Para exportar em PDF, instale o pacote 'fpdf2' (pip install fpdf2). Detalhe: {e}")
+
+    st.download_button(
+        "Baixar Relatorio (TXT)",
+        resumo.encode("utf-8"),
+        file_name=f"relatorio_{nome_slug}.txt",
+        mime="text/plain"
+    )
+
+    if pdf_bytes:
+        st.download_button(
+            "Baixar Relatorio (PDF)",
+            data=pdf_bytes,
+            file_name=f"relatorio_{nome_slug}.pdf",
+            mime="application/pdf"
+        )
 
 # -------------------------------------------------------------------
 # ABA 1 – ESTRUTURA & P&L (Ajustado: Card de Captação + Waterfall Mensal)

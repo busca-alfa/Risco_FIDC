@@ -1,1 +1,36 @@
-{}
+{
+  "FIDC Rio Amazonas Master": {
+    "valor_junior": 10000000.0,
+    "valor_mezz": 10000000.0,
+    "valor_senior": 10000000.0,
+    "sub_min_pct": 20.0,
+    "cdi_aa_pct": 15.0,
+    "taxa_carteira_am_pct": 2.35,
+    "pct_recebiveis_pct": 80.0,
+    "spread_senior_aa_pct": 5.0,
+    "spread_mezz_aa_pct": 6.5,
+    "taxa_adm_aa_pct": 0.3,
+    "taxa_gestao_aa_pct": 0.5,
+    "outros_custos_mensais": 100000.0,
+    "outros_receitas_mensais": 150000.0,
+    "pct_0_30": 95.0,
+    "prov_0_30": 0.0,
+    "pct_31_60": 0.5,
+    "prov_31_60": 5.0,
+    "pct_61_90": 0.5,
+    "prov_61_90": 15.0,
+    "pct_91_120": 0.5,
+    "prov_91_120": 20.0,
+    "pct_121_150": 0.5,
+    "prov_121_150": 40.0,
+    "pct_151_180": 0.5,
+    "prov_151_180": 50.0,
+    "pct_181_240": 0.5,
+    "prov_181_240": 70.0,
+    "pct_241_300": 0.5,
+    "prov_241_300": 85.0,
+    "pct_300p": 1.5,
+    "prov_300p": 100.0,
+    "incluir_pdd": true
+  }
+}
