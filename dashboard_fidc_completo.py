@@ -206,8 +206,8 @@ taxa_carteira_am_pct = st.sidebar.number_input(
     "Taxa da carteira (% a.m. sobre recebíveis)",
     min_value=0.0,
     value=get_param("taxa_carteira_am_pct", 2.35),
-    step=0.05,
-    format="%.2f"
+    step=0.0001,
+    format="%.4f"
 )
 taxa_carteira_am = taxa_carteira_am_pct / 100.0
 taxa_carteira_diaria = mensal_to_diario(taxa_carteira_am)
@@ -546,44 +546,10 @@ def taxa_carteira_necessaria_diaria(target_roe_jr_pct_aa: float) -> float:
 
 
 # ----------------------------
-# TAXA MÍNIMA DA CARTEIRA (CARD)
+# TAXA MÍNIMA DA CARTEIRA (BREAK-EVEN: ROE JÚNIOR = 0)
 # ----------------------------
-
 dias_uteis_ano = 252
 dias_uteis_mes = dias_uteis_ano / 12  # ~21 dias úteis (aprox.)
-
-# 1) Custos FIXOS por dia (independentes da taxa da carteira)
-custos_fixos_dia = (
-    custo_senior_dia
-    + custo_mezz_dia
-    + custo_adm_dia
-    + custo_gestao_dia
-    + custo_outros_dia
-)
-
-# 2) Receitas FIXAS consideradas para o break-even:
-#    **APENAS outras receitas** (não entra o rendimento do caixa a CDI).
-receitas_fixas_break_even_dia = receita_outros_dia
-
-if valor_recebiveis > 0:
-    # Break-even da Júnior (resultado_junior_dia = 0) em regime linear:
-    #
-    #   R * r_min + receitas_fixas_break_even_dia = custos_fixos_dia + pdd_dia
-    #
-    # => R * r_min = custos_fixos_dia + pdd_dia - receitas_fixas_break_even_dia
-    # => r_min     = (custos_fixos_dia + pdd_dia - receitas_fixas_break_even_dia) / R
-    numerador_dia = custos_fixos_dia + pdd_dia - receitas_fixas_break_even_dia
-
-    taxa_carteira_min_diaria = numerador_dia / valor_recebiveis
-    taxa_carteira_min_diaria = max(0.0, taxa_carteira_min_diaria)
-
-    # Regime linear: diária * nº de dias úteis do mês
-    taxa_carteira_min_am = taxa_carteira_min_diaria * dias_uteis_mes
-else:
-    taxa_carteira_min_diaria = 0.0
-    taxa_carteira_min_am = 0.0
-
-
 
 # Resultado diário
 resultado_liquido_dia = (
@@ -873,24 +839,79 @@ Resultados atuais (anualizados):
 
     if pdf_bytes:
         st.download_button(
-            "Baixar Relatorio (PDF)",
+            "Baixar Relatório (PDF)",
             data=pdf_bytes,
             file_name=f"relatorio_{nome_slug}.pdf",
             mime="application/pdf"
         )
 
 # -------------------------------------------------------------------
-# ABA 1 – ESTRUTURA & P&L (Ajustado: Card de Captação + Waterfall Mensal)
+# ABA 1 – ESTRUTURA & P&L
 # -------------------------------------------------------------------
 with tab_estrutura:
     st.markdown('<div class="section-header"> Estrutura de Capital</div>', unsafe_allow_html=True)
 
-    # 1. Preparar os dados na ordem correta (Sênior -> Mezz -> Júnior)
+    min_recebiveis_regra = pl_total * 0.67
+
+    # =========================================================
+    # PRÉ-CÁLCULO DAS MÉTRICAS DOS CARDS (OBRIGATÓRIO)
+    # =========================================================
+    dias_uteis_mes = 252 / 12
+
+    # --- Taxa média real do PL (blended) ---
+    if pl_total > 0:
+        taxa_media_pl_diaria_real = (receita_carteira_dia + receita_caixa_dia) / pl_total
+        taxa_media_pl_am_real = (1 + taxa_media_pl_diaria_real) ** dias_uteis_mes - 1
+
+        if incluir_pdd:
+            taxa_pdd_pl_am = (1 + (pdd_dia / pl_total)) ** dias_uteis_mes - 1
+        else:
+            taxa_pdd_pl_am = 0.0
+
+        taxa_media_pl_am_real_liq = taxa_media_pl_am_real - taxa_pdd_pl_am
+    else:
+        taxa_media_pl_am_real = 0.0
+        taxa_media_pl_am_real_liq = 0.0
+
+    # --- Captação disponível ---
+    if sub_min > 0:
+        pl_max_teorico = valor_junior / sub_min
+        captacao_disponivel = pl_max_teorico - pl_total
+    else:
+        captacao_disponivel = 0.0
+
+    # =========================================================
+    # TAXA MÍNIMA DA CARTEIRA (BREAK-EVEN) — NECESSÁRIA PARA OS CARDS 6 e 8
+    # Racional: (Custos Totais - Receita Caixa - Outras) / Volume Recebíveis
+    # =========================================================
+    custos_totais_dia = (
+        custo_senior_dia
+        + custo_mezz_dia
+        + custo_adm_dia
+        + custo_gestao_dia
+        + custo_outros_dia
+        + pdd_dia
+    )
+
+    receitas_fixas_dia = receita_caixa_dia + receita_outros_dia
+    buraco_dia = custos_totais_dia - receitas_fixas_dia
+
+    if valor_recebiveis > 0:
+        taxa_min_carteira_diaria = max(0.0, buraco_dia / valor_recebiveis)
+        taxa_min_carteira_am = (1 + taxa_min_carteira_diaria) ** dias_uteis_mes - 1
+    else:
+        taxa_min_carteira_diaria = 0.0
+        taxa_min_carteira_am = 0.0
+
+    spread_seguranca_carteira = taxa_carteira_am - taxa_min_carteira_am
+
+    # -----------------------------
+    # 1. Preparar os dados (Sênior -> Mezz -> Júnior)
+    # -----------------------------
     perc_senior = valor_senior / pl_total if pl_total > 0 else 0
     perc_mezz = valor_mezz / pl_total if pl_total > 0 else 0
     perc_junior = valor_junior / pl_total if pl_total > 0 else 0
 
-    # Referências anuais locais (evita dependências de variáveis mais abaixo)
     _dias_ano_ref = 252
     custo_senior_ano = custo_senior_dia * _dias_ano_ref
     custo_mezz_ano = custo_mezz_dia * _dias_ano_ref
@@ -898,25 +919,21 @@ with tab_estrutura:
     resultado_liquido_ano_local = resultado_liquido_dia * _dias_ano_ref
     taxa_media_pl_am_local = pct_recebiveis * taxa_carteira_am + (1.0 - pct_recebiveis) * cdi_am
 
-    # Taxas e resultados por classe (valores anuais)
     dados_estrutura = [
         ["Sênior", valor_senior, perc_senior, taxa_senior_aa * 100, -custo_senior_ano, "#D1E7DD"],
         ["Mezzanino", valor_mezz, perc_mezz, taxa_mezz_aa * 100, -custo_mezz_ano, "#FFF3CD"],
         ["Júnior (Subordinada)", valor_junior, perc_junior, retorno_anualizado_junior * 100, resultado_junior_ano_local, "#F8D7DA"],
     ]
-    
-    # Adicionando linha de total
-    # Resultado total em juros/encargos: soma os valores absolutos de cada classe
+
     total_resultado = sum(abs(row[4]) for row in dados_estrutura)
     dados_estrutura.append(["TOTAL", pl_total, 1.0, "", total_resultado, "#E2E3E5"])
 
     df_struct = pd.DataFrame(dados_estrutura, columns=["Classe", "Valor", "Perc", "Taxa_pct", "Resultado", "Color"])
 
-    # Layout: Tabela Bonita + Gráfico Visual da Pilha
+    # Layout: Tabela + Pilha
     c_tab, c_viz = st.columns([1.5, 1])
 
     with c_tab:
-        # Tabela estilizada com Plotly
         fig_table = go.Figure(data=[go.Table(
             header=dict(
                 values=['<b>Classe</b>', '<b>Valor (R$)</b>', '<b>Taxa (% a.a.)</b>', '<b>Resultado (R$)</b>'],
@@ -927,8 +944,8 @@ with tab_estrutura:
             ),
             cells=dict(
                 values=[
-                    df_struct.Classe, 
-                    [format_brl(v) for v in df_struct.Valor], 
+                    df_struct.Classe,
+                    [format_brl(v) for v in df_struct.Valor],
                     [f"{p:.2f}%" if isinstance(p, (int, float, np.floating)) and p != "" else "" for p in df_struct.Taxa_pct],
                     [format_brl(v) for v in df_struct.Resultado],
                 ],
@@ -938,38 +955,30 @@ with tab_estrutura:
                 height=30
             )
         )])
-        
-        fig_table.update_layout(
-            margin=dict(l=0, r=0, t=50, b=0), 
-            height=200
-        )
+        fig_table.update_layout(margin=dict(l=0, r=0, t=50, b=0), height=200)
         st.plotly_chart(fig_table, use_container_width=True)
 
     with c_viz:
-        # Gráfico de Pilha (Stacked Bar)
         fig_stack = go.Figure()
-        
         fig_stack.add_trace(go.Bar(
-            name='Júnior', x=['FIDC'], y=[valor_junior], 
+            name='Júnior', x=['FIDC'], y=[valor_junior],
             marker_color='#e74c3c', text=f"{df_struct.iloc[2]['Perc']*100:.0f}%", textposition='auto'
         ))
         fig_stack.add_trace(go.Bar(
-            name='Mezzanino', x=['FIDC'], y=[valor_mezz], 
+            name='Mezzanino', x=['FIDC'], y=[valor_mezz],
             marker_color='#f1c40f', text=f"{df_struct.iloc[1]['Perc']*100:.0f}%", textposition='auto'
         ))
         fig_stack.add_trace(go.Bar(
-            name='Sênior', x=['FIDC'], y=[valor_senior], 
+            name='Sênior', x=['FIDC'], y=[valor_senior],
             marker_color='#27ae60', text=f"{df_struct.iloc[0]['Perc']*100:.0f}%", textposition='auto'
         ))
 
-        # LINHA TRACEJADA DO MÍNIMO DE SUBORDINAÇÃO
         subordinacao_minima_valor = pl_total * sub_min
         fig_stack.add_shape(
             type="line", x0=-0.4, x1=0.4,
             y0=subordinacao_minima_valor, y1=subordinacao_minima_valor,
             line=dict(color="white", width=2, dash="dash")
         )
-        
         fig_stack.add_annotation(
             x=0.5, y=-0.15, xref="paper", yref="paper",
             text=f"Mín. Subordinação ({sub_min_pct:.1f}%)",
@@ -979,7 +988,7 @@ with tab_estrutura:
         fig_stack.update_layout(
             barmode='stack',
             showlegend=True,
-            margin=dict(l=20, r=20, t=50, b=20), 
+            margin=dict(l=20, r=20, t=50, b=20),
             height=280,
             xaxis=dict(visible=False),
             yaxis=dict(visible=False),
@@ -988,192 +997,121 @@ with tab_estrutura:
         st.plotly_chart(fig_stack, use_container_width=True)
 
     st.markdown("---")
-    
-    # CARDS DE INFORMAÇÕES FINANCEIRAS
-    st.markdown('<div class="section-header"> Informações Financeiras</div>', unsafe_allow_html=True)
-    
-    min_recebiveis_regra = pl_total * 0.67
-    
-    # --- TAXAS MÉDIAS DO PL ---
-    
-    # 1) Taxa média bruta do PL (antes da PDD)
-    taxa_media_pl_am = (
-        pct_recebiveis * taxa_carteira_am
-        + (1.0 - pct_recebiveis) * cdi_am
-    )
-    
-    # 2) Impacto da PDD sobre o PL:
-    #    PDD só incide sobre os recebíveis, então:
-    #    impacto no PL = % do PL em recebíveis * taxa de perda esperada da carteira
-    if incluir_pdd:
-        impacto_pdd_pl_am = pct_recebiveis * taxa_perda_esp_am
-    else:
-        impacto_pdd_pl_am = 0.0
-    
-    # 3) Taxa média líquida de PDD
-    taxa_media_pl_am_liq = taxa_media_pl_am - impacto_pdd_pl_am
-    
-    
-    # ----------------------------
-    # TAXA MÍNIMA DA CARTEIRA (CARD)
-    # ----------------------------
-    
-    dias_uteis_ano = 252
-    dias_uteis_mes = dias_uteis_ano / 12  # ~21 dias úteis
-    
-    # 1) Custos FIXOS por dia (não dependem da taxa da carteira)
-    custos_fixos_dia = (
-        custo_senior_dia
-        + custo_mezz_dia
-        + custo_adm_dia
-        + custo_gestao_dia
-        + custo_outros_dia
-    )
-    
-    # 2) Receitas FIXAS por dia consideradas no break-even:
-    #    SOMENTE outras receitas (sem caixa a CDI)
-    receitas_fixas_dia = receita_outros_dia
-    
-    if valor_recebiveis > 0:
-        # 0 = R * r_min + receitas_fixas_dia - (custos_fixos_dia + pdd_dia)
-        # -> r_min = (custos_fixos_dia + pdd_dia - receitas_fixas_dia) / R
-        numerador_dia = custos_fixos_dia + pdd_dia - receitas_fixas_dia
-    
-        taxa_carteira_min_diaria = numerador_dia / valor_recebiveis
-        taxa_carteira_min_diaria = max(0.0, taxa_carteira_min_diaria)
-    
-        # aqui mantemos a conversão linear para mensal
-        taxa_carteira_min_am = taxa_carteira_min_diaria * dias_uteis_mes
-    else:
-        taxa_carteira_min_diaria = 0.0
-        taxa_carteira_min_am = 0.0
-    
-        
-    
-    # --- CÁLCULO DE CAPTAÇÃO DISPONÍVEL ---
-    # Quanto o PL Total pode crescer mantendo a Júnior atual fixa, até bater no Sub_Min?
-    # PL_Max = Valor_Junior / Sub_Min
-    # Captação_Disp = PL_Max - PL_Atual
-    if sub_min > 0:
-        pl_max_teorico = valor_junior / sub_min
-        captacao_disponivel = pl_max_teorico - pl_total
-    else:
-        captacao_disponivel = 0.0
 
-    
-        # AGORA SÃO 6 COLUNAS
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    
+    # =================================================================
+    # CARDS — 2 LINHAS (4 em cima, 4 embaixo)
+    # =================================================================
+    st.markdown('<div class="section-header">💰 Informações Financeiras</div>', unsafe_allow_html=True)
+
+    # Linha 1 — Estrutura (1 a 4)
+    col1, col2, col3, col4 = st.columns(4)
+
     col1.metric("Alocação em Recebíveis", format_brl_mil(valor_recebiveis), f"{pct_recebiveis*100:.0f}% do PL")
     col2.metric("Caixa (CDI)", format_brl_mil(valor_caixa), f"{(1 - pct_recebiveis)*100:.0f}% do PL")
     col3.metric("Mínimo em Recebíveis", format_brl_mil(min_recebiveis_regra), "67% do PL", delta_color="inverse")
 
-    col5.metric(
-        "Taxa média do PL (a.m.)",
-        f"{taxa_media_pl_am*100:.2f}%",
-        delta=f"Líq. de PDD: {taxa_media_pl_am_liq*100:.2f}%", 
-        delta_color="off", 
-        help="A taxa principal é bruta. O valor menor abaixo já desconta o custo da PDD mensal."
-    )
-    
-    # CARD 5: Captação disponível (como já estava)
-    lbl_cap = "Captação Disp. (Sênior/Mezz)"
-    val_cap = format_brl_mil(captacao_disponivel)
-    if captacao_disponivel >= 0:
-        delta_cap = "Espaço para crescer"
-        cor_cap = "normal"
+    if captacao_disponivel >= -1.0:
+        col4.metric("Captação Disp.", format_brl_mil(captacao_disponivel), "Espaço para crescer", delta_color="normal")
     else:
-        delta_cap = "Desenquadrado"
-        cor_cap = "inverse"
-    col4.metric(
-        lbl_cap, 
-        val_cap, 
-        delta=delta_cap, 
-        delta_color=cor_cap,
-        help="Quanto o fundo pode captar de cotas Sênior/Mezzanino mantendo a Subordinação Mínima atual."
-    )
+        col4.metric("Captação Disp.", format_brl_mil(captacao_disponivel), "Desenquadrado", delta_color="inverse")
 
-    # CARD 6: Taxa mínima da carteira para pagar TODOS os custos
-    taxa_min_am_pct = taxa_carteira_min_am * 100.0
-    delta_taxa_min = taxa_min_am_pct - taxa_carteira_am_pct
+    # Linha 2 — Rentabilidade & Spreads (5 a 8)
+    col5, col6, col7, col8 = st.columns(4)
+
+    col5.metric(
+        "Taxa Média do PL (a.m.)",
+        f"{taxa_media_pl_am_real*100:.4f}%",
+        delta=f"Líq. PDD: {taxa_media_pl_am_real_liq*100:.2f}%",
+        delta_color="off",
+        help="Rentabilidade média ponderada dos ativos (Carteira + Caixa)."
+    )
 
     col6.metric(
-        "Taxa mín. Carteira (break-even)",
-        f"{taxa_min_am_pct:.4f}% a.m.",
-        delta=f"{(taxa_carteira_min_am*100 - taxa_carteira_am_pct):.4f} p.p. vs atual",
-        delta_color="inverse" if delta_taxa_min > 0 else "normal",
+        "Taxa Mínima da Carteira (0x0)",
+        f"{taxa_min_carteira_am*100:.4f}% a.m.",
+        delta=f"Spread vs atual: {spread_seguranca_carteira*100:+.2f} p.p.",
+        delta_color="normal" if spread_seguranca_carteira >= 0 else "inverse",
         help=(
-            "Taxa média mínima dos recebíveis necessária para que as receitas "
-            "(carteira + caixa + outras) cubram todos os custos: Sênior, Mezz, "
-            "adm, gestão, PDD e outros custos, deixando o resultado da Cota "
-            "Júnior em zero."
+            "Taxa mínima NOS RECEBÍVEIS para o resultado da Cota Júnior ficar em zero.\n\n"
+            "Fórmula: (Custos Totais - Receita do Caixa - Outras Receitas) / Volume em Recebíveis."
         ),
     )
 
+    # NOVOS CARDS — SPREAD vs CDI mensal (cdi_am)
+    spread_media_pl_vs_cdi = taxa_media_pl_am_real - cdi_am
+    spread_min_carteira_vs_cdi = taxa_min_carteira_am - cdi_am
 
-    
+    col7.metric(
+        "Spread Taxa Média vs CDI",
+        f"{spread_media_pl_vs_cdi*100:+.2f} p.p.",
+        delta="Sobre CDI mensal",
+        delta_color="normal" if spread_media_pl_vs_cdi >= 0 else "inverse",
+        help="Excesso de retorno da Taxa Média do PL em relação ao CDI mensal."
+    )
+
+    col8.metric(
+        "Spread Taxa Mínima vs CDI",
+        f"{spread_min_carteira_vs_cdi*100:+.2f} p.p.",
+        delta="Custo econômico relativo",
+        delta_color="normal" if spread_min_carteira_vs_cdi <= 0 else "inverse",
+        help=(
+            "Diferença entre a Taxa Mínima da Carteira e o CDI mensal.\n"
+            "Quanto menor (ou mais negativo), maior o colchão econômico."
+        )
+    )
+
 
 
     st.markdown("---")
     st.markdown('<div class="section-header"> P&L Diário do Fundo</div>', unsafe_allow_html=True)
-    
 
     col_rec, col_custos_gestora, col_cotas = st.columns(3)
-    
-    # 1) RECEITAS
+
     with col_rec:
         st.markdown("**Receitas (dia)**")
         st.metric("Receita da Carteira (dia)", format_brl(receita_carteira_dia))
         st.metric("Receita do Caixa (dia)", format_brl(receita_caixa_dia))
         st.metric("Outras receitas (dia)", format_brl(receita_outros_dia))
         st.metric("Receita Total (dia)", format_brl(receita_total_dia))
-    
-    # 2) CUSTOS DA GESTORA
+
     custo_total_gestora_dia = custo_adm_dia + custo_gestao_dia + custo_outros_dia
-    
     with col_custos_gestora:
         st.markdown("**Custos da gestora (dia)**")
         st.metric("Custo Gestora (dia)", format_brl(custo_gestao_dia))
         st.metric("Custo Adm (dia)", format_brl(custo_adm_dia))
         st.metric("Outros custos (dia)", format_brl(custo_outros_dia))
         st.metric("Custos Totais (dia)", format_brl(custo_total_gestora_dia))
-    
-    # 3) COTAS + PDD
+
     with col_cotas:
         st.markdown("**Cotas & PDD (dia)**")
         st.metric("Custo Cota Sênior (dia)", format_brl(custo_senior_dia))
         st.metric("Custo Cota Mezzanino (dia)", format_brl(custo_mezz_dia))
         st.metric("Despesa de PDD (dia)", format_brl(pdd_dia) if incluir_pdd else "R$ 0,00")
         st.metric("Resultado da Cota Júnior (dia)", format_brl(resultado_junior_dia))
-    
-    
+
     # Retornos mensais projetados
     retorno_mensal_mezz    = (1 + retorno_anualizado_mezz)   ** (1/12) - 1
     retorno_mensal_senior  = (1 + retorno_anualizado_senior) ** (1/12) - 1
-    
+
     st.markdown("---")
     st.markdown('<div class="section-header"> Retornos Efetivos</div>', unsafe_allow_html=True)
-    
+
     col_jr, col_mezz, col_sen = st.columns(3)
-    
-    # Coluna 1 – Cota Júnior
+
     with col_jr:
         st.metric("Retorno Diário da Cota Júnior",  format_pct(retorno_diario_junior))
         st.metric("Retorno Mensal da Cota Júnior",  format_pct(retorno_mensal_junior))
         st.metric("Retorno Anualizado da Cota Júnior", format_pct(retorno_anualizado_junior))
-    
-    # Coluna 2 – Cota Mezzanino
+
     with col_mezz:
         st.metric("Retorno Diário da Cota Mezzanino",  format_pct(retorno_diario_mezz))
         st.metric("Retorno Mensal da Cota Mezzanino",  format_pct(retorno_mensal_mezz))
         st.metric("Retorno Anualizado da Cota Mezzanino", format_pct(retorno_anualizado_mezz))
-    
-    # Coluna 3 – Cota Sênior
+
     with col_sen:
         st.metric("Retorno Diário da Cota Sênior",  format_pct(retorno_diario_senior))
         st.metric("Retorno Mensal da Cota Sênior",  format_pct(retorno_mensal_senior))
         st.metric("Retorno Anualizado da Cota Sênior", format_pct(retorno_anualizado_senior))
-    
 
     # -----------------------------
     # WATERFALL - Escolha Dia/Mês/Ano
@@ -1183,37 +1121,34 @@ with tab_estrutura:
         '<div class="section-header"> Análise Gráfica: Waterfall do Resultado</div>',
         unsafe_allow_html=True,
     )
-    
-    # MUDANÇA AQUI: ADICIONADO 'MENSAL'
+
     modo_wf = st.radio(
-     "Visualizar Waterfall por:",
-     ["Diário", "Mensal", "Anual"],
-     horizontal=True)
- 
-    # DEFINIÇÃO DOS FATORES E DO RESULTADO DA JÚNIOR NO PERÍODO
+        "Visualizar Waterfall por:",
+        ["Diário", "Mensal", "Anual"],
+        horizontal=True
+    )
+
     if modo_wf == "Diário":
-        fator = 1                    # 1 dia útil
+        fator = 1
         resultado_final = resultado_junior_dia
     elif modo_wf == "Mensal":
-        fator = 21                   # ~21 dias úteis
+        fator = 21
         resultado_final = resultado_junior_mes
-    else:  # "Anual"
-        fator = 252                  # 252 dias úteis
+    else:
+        fator = 252
         resultado_final = resultado_junior_ano
-    
-    # Ajustar valores conforme o período (sempre em R$)
+
     rec_carteira = receita_carteira_dia * fator
     rec_caixa    = receita_caixa_dia   * fator
     rec_outros   = receita_outros_dia  * fator
-       
+
     c_senior   = custo_senior_dia   * fator
     c_mezz     = custo_mezz_dia     * fator
     c_adm      = custo_adm_dia      * fator
     c_gest     = custo_gestao_dia   * fator
     pdd_v      = pdd_dia            * fator
     c_outros_v = custo_outros_dia   * fator
-       
-    # Agora o resultado_final JÁ é o resultado da Cota Júnior no período
+
     labels_wf = [
         "Receita Carteira",
         "Receita Caixa",
@@ -1226,7 +1161,7 @@ with tab_estrutura:
         "Outros Custos",
         "Resultado Final (Júnior)"
     ]
-    
+
     values_wf = [
         rec_carteira,
         rec_caixa,
@@ -1239,14 +1174,14 @@ with tab_estrutura:
         -c_outros_v,
         resultado_final
     ]
-    
+
     measures_wf = [
         "relative","relative","relative",
         "relative","relative","relative",
         "relative","relative","relative",
-        "total"   # barra final: total = resultado da Júnior no período
+        "total"
     ]
-    
+
     fig_wf = go.Figure(go.Waterfall(
         name="waterfall",
         orientation="v",
@@ -1257,7 +1192,7 @@ with tab_estrutura:
         textposition="outside",
         connector={"line": {"color": "rgb(63,63,63)"}}
     ))
-    
+
     fig_wf.update_layout(
         title={
             "text": f"Waterfall do Resultado ({modo_wf})",
@@ -1267,10 +1202,9 @@ with tab_estrutura:
         yaxis=dict(automargin=True),
         height=500
     )
-    
+
     st.plotly_chart(fig_wf, use_container_width=True)
-    
-        
+
     
 # -------------------------------------------------------------------
 # ABA 2 – GESTÃO DE RISCO & STRESS TEST (UNIFICADA E CORRIGIDA)

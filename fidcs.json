@@ -5,7 +5,7 @@
     "valor_senior": 10000000.0,
     "sub_min_pct": 20.0,
     "cdi_aa_pct": 15.0,
-    "taxa_carteira_am_pct": 2.35,
+    "taxa_carteira_am_pct": 1.56,
     "pct_recebiveis_pct": 80.0,
     "spread_senior_aa_pct": 5.0,
     "spread_mezz_aa_pct": 6.5,
