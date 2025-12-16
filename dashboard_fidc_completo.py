@@ -1011,9 +1011,9 @@ with tab_estrutura:
     col3.metric("Mínimo em Recebíveis", format_brl_mil(min_recebiveis_regra), "67% do PL", delta_color="inverse")
 
     if captacao_disponivel >= -1.0:
-        col4.metric("Captação Disp.", format_brl_mil(captacao_disponivel), "Espaço para crescer", delta_color="normal")
+        col4.metric("Captação Disponível", format_brl_mil(captacao_disponivel), "Espaço para crescer", delta_color="normal")
     else:
-        col4.metric("Captação Disp.", format_brl_mil(captacao_disponivel), "Desenquadrado", delta_color="inverse")
+        col4.metric("Captação Disponível", format_brl_mil(captacao_disponivel), "Desenquadrado", delta_color="inverse")
 
     # Linha 2 — Rentabilidade & Spreads (5 a 8)
     col5, col6, col7, col8 = st.columns(4)
@@ -1044,21 +1044,33 @@ with tab_estrutura:
     col7.metric(
         "Spread Taxa Média vs CDI",
         f"{spread_media_pl_vs_cdi*100:+.2f} p.p.",
-        delta="Sobre CDI mensal",
+        delta=f"CDI: {cdi_am*100:.2f}% a.m.",
         delta_color="normal" if spread_media_pl_vs_cdi >= 0 else "inverse",
         help="Excesso de retorno da Taxa Média do PL em relação ao CDI mensal."
     )
 
+    # 1) Annualiza a taxa média do PL e calcula spread anual vs CDI (em p.p. a.a.)
+    taxa_media_pl_aa = (1 + taxa_media_pl_am_real) ** 12 - 1
+
+    spread_aa_pp = (taxa_media_pl_aa - cdi_aa) * 100.0  # p.p. a.a.
+
+    # 2) Equivalência relativa vs CDI (mantém o racional que já estava funcionando)
+    if cdi_am > 0:
+        equiv_cdi_pct = (taxa_media_pl_am_real / cdi_am) * 100.0  # ex: 127% do CDI
+    else:
+        equiv_cdi_pct = 0.0
+
     col8.metric(
-        "Spread Taxa Mínima vs CDI",
-        f"{spread_min_carteira_vs_cdi*100:+.2f} p.p.",
-        delta="Custo econômico relativo",
-        delta_color="normal" if spread_min_carteira_vs_cdi <= 0 else "inverse",
+        "Spread vs CDI (anual)",
+        f"CDI {spread_aa_pp:+.2f}% a.a.",
+        delta=f"{equiv_cdi_pct:.0f}% do CDI",
+        delta_color="normal" if spread_aa_pp >= 0 else "inverse",
         help=(
-            "Diferença entre a Taxa Mínima da Carteira e o CDI mensal.\n"
-            "Quanto menor (ou mais negativo), maior o colchão econômico."
+            "Valor do card: spread ANUALIZADO em p.p. a.a. = (Taxa média do PL anualizada) - (CDI a.a.).\n"
+            "Linha de baixo: equivalência relativa da taxa média do PL vs CDI mensal (% do CDI)."
         )
     )
+
 
 
 
