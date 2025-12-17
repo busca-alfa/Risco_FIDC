@@ -3536,7 +3536,7 @@ with tab_rating:
         x_min,
         x_max,
         alpha=0.20,
-        label="Faixa Indicativa de Rating"
+        label="Faixa Indicativa de taxa"
     )
 
 
@@ -3574,6 +3574,236 @@ with tab_rating:
     fig.tight_layout()
 
     st.pyplot(fig)
+
+
+    # -------------------------------------------------------------
+    # ANÁLISE DE ENQUADRAMENTO DA OPERAÇÃO NO FUNDO
+    # -------------------------------------------------------------
+    st.markdown("---")
+    st.header("🏛️ Enquadramento da Operação no Fundo")
+
+    # =============================
+    # INPUTS DA OPERAÇÃO E POLÍTICA
+    # =============================
+    col1, col2, col3, col4 = st.columns([2, 1.2, 1.5, 1])
+
+    with col1:
+        valor_operacao = st.number_input(
+            "Valor da Operação (R$)",
+            min_value=0.0,
+            step=100_000.0,
+            format="%.2f"
+        )
+
+    with col2:
+        limite_pct_pl_sacado = st.number_input(
+            "Limite por sacado (% do PL)",
+            min_value=0.0,
+            max_value=100.0,
+            value=10.0,
+            step=0.5
+        ) / 100
+
+    with col3:
+        rating_minimo = st.selectbox(
+            "Rating mínimo permitido pelo fundo",
+            rating_ordem,
+            index=rating_ordem.index("BBB"),
+            key="rating_minimo_fundo"
+        )
+
+    with col4:
+        prazo_operacao_dias = st.number_input(
+            "Prazo (dias)",
+            min_value=1,
+            step=1
+        )
+
+
+    # =============================
+    # CÁLCULOS DE ENQUADRAMENTO
+    # =============================
+    pct_pl_total = valor_operacao / pl_total if pl_total > 0 else 0
+    impacto_junior = valor_operacao / valor_junior if valor_junior > 0 else 0
+
+    idx_rating_final = rating_ordem.index(rating_cod_final)
+    idx_rating_min = rating_ordem.index(rating_minimo)
+
+    enquadrado_rating = idx_rating_final <= idx_rating_min
+
+    # =============================
+    # DELTA DE CONCENTRAÇÃO POR SACADO
+    # =============================
+    excesso_concentracao = pct_pl_total - limite_pct_pl_sacado
+
+    if excesso_concentracao > 0:
+        enquadrado_sacado = False
+        delta_status = f"+{excesso_concentracao*100:.2f} p.p."
+        delta_color = "inverse"  # vermelho
+    else:
+        enquadrado_sacado = True
+        delta_status = f"{excesso_concentracao*100:.2f} p.p."
+        delta_color = "normal"   # verde
+
+    # =============================
+    # STATUS FINAL DA OPERAÇÃO
+    # =============================
+    operacao_enquadrada = enquadrado_rating and enquadrado_sacado
+
+    if operacao_enquadrada:
+        status = "ENQUADRADO"
+        cor_status = "green"
+    else:
+        status = "DESENQUADRADO"
+        cor_status = "red"
+
+
+
+    # =============================
+    # OUTPUTS VISUAIS
+    # =============================
+    st.markdown("### 📊 Diagnóstico da Operação")
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric(
+        "Valor da Operação",
+        f"R$ {valor_operacao:,.0f}"
+    )
+
+    # =============================
+    # STATUS DA OPERAÇÃO POR CONCENTRAÇÃO
+    # =============================
+    if pct_pl_total > limite_pct_pl_sacado:
+        status_operacao = "DESENQUADRADO"
+        delta_color = "inverse"  # vermelho
+    else:
+        status_operacao = "ENQUADRADO"
+        delta_color = "normal"   # verde
+
+    c2.metric(
+        "% do PL Total",
+        f"{pct_pl_total*100:.2f}%",
+        delta=status_operacao,
+        delta_color=delta_color,
+        help=f"Limite máximo permitido por sacado: {limite_pct_pl_sacado*100:.1f}% do PL"
+    )
+
+
+
+    c3.metric(
+        "Prazo",
+        f"{prazo_operacao_dias} dias"
+    )
+
+    c4.metric(
+        "Impacto na Cota Júnior",
+        f"{impacto_junior*100:.2f}%",
+        help="Percentual da cota júnior consumido em caso de default total."
+    )
+
+   
+    # =============================
+    # EXPLICAÇÕES AUTOMÁTICAS
+    # =============================
+    st.markdown("### 📝 Análise de Risco e Política")
+
+    observacoes = []
+
+    if not enquadrado_rating:
+        observacoes.append(
+            f"- Rating final ({rating_cod_final}) abaixo do mínimo permitido ({rating_minimo})."
+        )
+
+    if not enquadrado_sacado:
+        observacoes.append(
+            f"- Concentração de {pct_pl_total*100:.2f}% do PL excede o limite de {limite_pct_pl_sacado*100:.1f}% por sacado."
+        )
+
+    if impacto_junior > 0.30:
+        observacoes.append(
+            "- Impacto elevado na cota júnior em cenário de default (>30%)."
+        )
+
+    if not observacoes:
+        observacoes.append(
+            "- Operação enquadrada nos limites de política e concentração do fundo."
+        )
+
+    for obs in observacoes:
+        st.write(obs)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -3620,6 +3850,8 @@ with tab_rating:
     # Políticas padrão de concentração (ajuste depois se quiser)
     LIMITE_MAX_PL = 0.25       # 25% do PL
     LIMITE_MAX_JUNIOR = 1.50   # 150% da Cota Júnior
+
+
 
     # -----------------------------------------------------------------
     # Funções auxiliares
@@ -3946,7 +4178,7 @@ with tab_rating:
             )
 
         rating_cod_final, houve_override = aplica_override_rating(
-            rating_cod_original, ajuste_rating
+            rating_cod_original, ajuste_notch
         )
 
         desc_final = next(desc for code, _, desc in RATING_CUTS if code == rating_cod_final)
@@ -4020,7 +4252,7 @@ with tab_rating:
             help="Limite do sacado em relação ao colchão de subordinação (Cota Júnior)."
         )
 
-        if houve_override and ajuste_rating != "Sem ajuste" and justificativa_override.strip() == "":
+        if houve_override and ajuste_notch != "Sem ajuste" and justificativa_override.strip() == "":
             st.warning("⚠️ Override aplicado sem justificativa preenchida.")
 
         # -------------------------------------------------------------
