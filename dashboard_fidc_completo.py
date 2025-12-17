@@ -7,6 +7,7 @@ import json
 from streamlit_drawable_canvas import st_canvas
 import io
 from PIL import Image
+import matplotlib.pyplot as plt
 
 FIDC_STORE_PATH = Path(__file__).parent / "fidcs.json"
 
@@ -2797,6 +2798,22 @@ with tab_dre:
     else:
         st.info("Gere uma simulação com receita positiva para visualizar o fluxo financeiro.")
         
+# -------------------------------------------------------------
+# ESCALA DE RATING DE CRÉDITO
+# -------------------------------------------------------------
+RATING_CUTS = [
+    ("AAA", 0.90, "Risco extremamente baixo"),
+    ("AA",  0.80, "Risco muito baixo"),
+    ("A",   0.70, "Risco baixo"),
+    ("BBB", 0.60, "Risco moderado"),
+    ("BB",  0.50, "Risco elevado"),
+    ("B",   0.40, "Risco muito elevado"),
+    ("CCC", 0.00, "Risco crítico"),
+]
+
+def spread_por_rating(rating):
+    return SPREAD_POR_RATING.get(rating, None)
+
 
 with tab_rating:
 
@@ -2815,9 +2832,6 @@ with tab_rating:
 
     # =========================
     # 1. INPUT – TABELA EDITÁVEL
-    # =========================
-        # =========================
-    # INPUT – TABELA EDITÁVEL (COM DEFAULT)
     # =========================
     if "hist_input" not in st.session_state:
         st.session_state["hist_input"] = pd.DataFrame(
@@ -3072,6 +3086,46 @@ with tab_rating:
 
     st.markdown("### 🎯 Scores de Crédito – Indicadores")
 
+    with st.expander("📘 Metodologia de Avaliação dos Indicadores", expanded=False):
+        st.markdown("""
+    ### Objetivo do Bloco
+    Este bloco avalia a **qualidade econômico-financeira do sacado** a partir de indicadores
+    extraídos dos demonstrativos históricos, com foco em **capacidade de geração de caixa,
+    alavancagem e liquidez**.
+
+    ### Lógica Geral
+    Os indicadores são analisados individualmente e depois consolidados em um **score sintético**,
+    que alimenta o rating final de crédito.
+
+    A lógica segue três pilares:
+
+    1. **Geração de Caixa**
+    - EBITDA / Faturamento  
+    - EBITDA absoluto e crescimento (CAGR)
+
+    2. **Liquidez e Sustentabilidade**
+    - Caixa / EBITDA  
+    - Caixa / Dívida  
+
+    3. **Alavancagem**
+    - Dívida / EBITDA  
+    - Dívida / PL  
+
+    ### Interpretação
+    - Quanto **maior a geração de caixa** e **menor a alavancagem**, melhor o score.
+    - Indicadores fora de faixas prudenciais geram **penalização progressiva**.
+    - O modelo evita decisões binárias: trabalha com **gradiente de risco**.
+
+    ### Observação Importante
+    Este score **não decide sozinho** o crédito.
+    Ele compõe o rating final junto com:
+    - Histórico de pagamentos
+    - Concentração
+    - Estrutura da operação
+    - Subordinação do FIDC
+    """)
+
+
     cols = st.columns(len(scores))
 
     for col, (nome, score) in zip(cols, scores.items()):
@@ -3095,6 +3149,339 @@ with tab_rating:
                 """,
                 unsafe_allow_html=True
             )
+
+    # =========================
+    # BASE ÚNICA DE DADOS
+    # =========================
+    df = df_input
+
+    receita = df.loc["Faturamento", "Atual"]
+    ebitda = df.loc["EBITDA", "Atual"]
+    caixa = df.loc["Caixa", "Atual"]
+    divida = df.loc["Dívida", "Atual"]
+    pl = df.loc["PL", "Atual"]
+
+    # =========================
+    # INDICADORES – ÚLTIMO PERÍODO
+    # =========================
+    ebitda_margin = ebitda / receita if receita > 0 else np.nan
+    divida_ebitda = divida / ebitda if ebitda > 0 else np.nan
+    caixa_ebitda = caixa / ebitda if ebitda > 0 else np.nan
+    divida_pl = divida / pl if pl > 0 else np.nan
+    caixa_divida = caixa / divida if divida > 0 else np.nan
+
+    # CAGR Receita
+    cagr_receita = cagr(
+        df.loc["Faturamento", "P-3"],
+        df.loc["Faturamento", "Atual"]
+    )
+
+    # =========================
+    # FUNÇÃO DE SCORE NORMALIZADO
+    # =========================
+    def score_interval(valor, bom, medio, inverso=False):
+        if valor is None or np.isnan(valor):
+            return 0.0
+        if inverso:
+            if valor <= bom:
+                return 1.0
+            elif valor <= medio:
+                return 0.5
+            else:
+                return 0.0
+        else:
+            if valor >= bom:
+                return 1.0
+            elif valor >= medio:
+                return 0.5
+            else:
+                return 0.0
+
+    # =========================
+    # SCORES INDIVIDUAIS
+    # =========================
+    score_ebitda_margin = score_interval(ebitda_margin, 0.20, 0.10)
+    score_divida_ebitda = score_interval(divida_ebitda, 2.0, 4.0, inverso=True)
+    score_caixa_divida = score_interval(caixa_divida, 0.30, 0.10)
+    score_divida_pl = score_interval(divida_pl, 0.80, 1.50, inverso=True)
+    score_cagr = score_interval(cagr_receita, 0.10, 0.03)
+
+    # =========================
+    # SCORE FINANCEIRO BALANCEADO
+    # =========================
+    score_financeiro = (
+        0.25 * score_ebitda_margin +
+        0.25 * score_divida_ebitda +
+        0.20 * score_caixa_divida +
+        0.15 * score_divida_pl +
+        0.15 * score_cagr
+    )
+
+    # =========================
+    # MAPA DE RATING
+    # =========================
+    def map_rating(score):
+        for code, limite, _ in RATING_CUTS:
+            if score >= limite:
+                return code
+        return "CCC"
+
+    rating_final = map_rating(score_financeiro)
+
+    # =========================
+    # OUTPUT FINAL
+    # =========================
+    st.markdown("## 🏁 Resultado do Rating Financeiro")
+
+    with st.expander("📘 Metodologia do Rating Financeiro", expanded=False):
+        st.markdown("""
+    ### Objetivo do Rating
+    Este rating busca medir a **capacidade econômico-financeira do sacado** em honrar
+    suas obrigações no curto e médio prazo, com foco em **geração de caixa, liquidez,
+    alavancagem e crescimento**.
+
+    O modelo é **quantitativo, balanceado e explicável**, evitando decisões binárias.
+
+    ---
+
+    ### Estrutura de Pesos do Rating
+
+    | Pilar                  | Indicador                         | Peso |
+    |------------------------|-----------------------------------|------|
+    | **Rentabilidade**      | EBITDA / Receita                  | 25%  |
+    | **Alavancagem**        | Dívida / EBITDA                   | 25%  |
+    | **Liquidez**           | Caixa / Dívida                    | 20%  |
+    | **Estrutura de Capital** | Dívida / PL                     | 15%  |
+    | **Crescimento**        | CAGR do Faturamento (3 anos)      | 15%  |
+
+    ---
+
+    ### Metodologia de Pontuação
+    Cada indicador recebe um **score normalizado entre 0 e 1**, conforme faixas
+    prudenciais típicas de análise de crédito:
+
+    - **1.0** → Faixa saudável  
+    - **0.5** → Zona intermediária  
+    - **0.0** → Faixa de risco elevado  
+
+    Indicadores de risco (ex: Dívida / EBITDA) são avaliados de forma **inversa**
+    — quanto menor, melhor.
+
+    ---
+
+    ### Cálculo do Score Final
+    O score financeiro é a **média ponderada** dos scores individuais:
+
+    > Score Final = Σ (Score do Indicador × Peso)
+
+    Este score é então mapeado para um **rating alfabético**, de AAA a C.
+
+    ---
+
+    ### Observações Importantes
+    - O modelo **não incorpora fatores qualitativos** nesta etapa.
+    - Não há julgamento subjetivo ou override automático.
+    - O rating reflete exclusivamente a **condição financeira histórica**.
+    """)
+
+
+    c1, c2 = st.columns(2)
+
+    c1.metric(
+        "Score Financeiro (0–1)",
+        f"{score_financeiro:.2f}",
+        help="Score agregado com pesos balanceados entre rentabilidade, liquidez, alavancagem e crescimento."
+    )
+
+    c2.metric(
+        "Rating de Crédito",
+        rating_final,
+        help="Rating financeiro sintético, sem fatores qualitativos ou estruturais."
+    )
+
+    with st.expander("📊 Escala de Rating e Níveis de Risco", expanded=False):
+        st.markdown("""
+    ### Objetivo da Escala
+    Esta escala traduz o **score financeiro quantitativo** em uma **classificação de risco de crédito**
+    utilizada como referência para decisões em FIDCs.
+
+    ---
+
+    ### Escala de Rating Financeiro Base
+
+    | Rating | Faixa de Score | Nível de Risco | Interpretação |
+    |------|---------------|---------------|--------------|
+    | **AAA** | ≥ 0,90 | **Mínimo** | Estrutura financeira excepcional, alta previsibilidade de caixa |
+    | **AA** | 0,80 – 0,89 | **Muito Baixo** | Empresa muito sólida, baixa probabilidade de estresse |
+    | **A** | 0,70 – 0,79 | **Baixo** | Boa capacidade de pagamento e geração de caixa |
+    | **BBB** | 0,60 – 0,69 | **Moderado** | Estrutura adequada, sensível a ciclos |
+    | **BB** | 0,50 – 0,59 | **Moderado / Elevado** | Risco crescente, exige mitigadores |
+    | **B** | 0,40 – 0,49 | **Elevado** | Fragilidade financeira |
+    | **C** | < 0,40 | **Muito Elevado** | Alto risco de inadimplência |
+
+    ---
+
+    ### Importante
+    Este rating representa o **rating financeiro base do sacado**.
+    O rating final da operação pode diferir em função de:
+    - setor de atuação
+    - histórico de pagamentos
+    - concentração
+    - estrutura do FIDC
+    """)
+
+    # -------------------------------------------------------------
+    # OVERRIDE DE RATING (JULGAMENTO)
+    # -------------------------------------------------------------
+    st.markdown("---")
+    st.header("🧭 Ajuste de Julgamento (Override de Rating)")
+
+    
+
+    rating_cod_original = rating_final
+    def aplica_override_rating(rating_cod_original, ajuste_rating):
+        """
+        Aplica override manual (+1 ou -1 notch) ao rating original.
+
+        Retorna:
+            rating_cod_final (str)
+            houve_override (bool)
+        """
+
+        # Ordem hierárquica dos ratings (do melhor para o pior)
+        rating_ordem = [
+            "AAA", "AA+", "AA", "AA-",
+            "A+", "A", "A-",
+            "BBB+", "BBB", "BBB-",
+            "BB+", "BB", "BB-",
+            "B+", "B", "B-",
+            "CCC", "CC", "C",
+            ]
+
+        idx = rating_ordem.index(rating_cod_original)
+
+        if ajuste_rating == "↑ +1 notch" and idx > 0:
+            return rating_ordem[idx - 1], True
+
+        if ajuste_rating == "↓ -1 notch" and idx < len(rating_ordem) - 1:
+            return rating_ordem[idx + 1], True
+
+        return rating_cod_original, False
+
+
+    col_o1, col_o2 = st.columns([1, 2])
+
+    with col_o1:
+        ajuste_rating = st.selectbox(
+            "Ajuste de julgamento",
+            ["Sem ajuste", "↑ +1 notch", "↓ -1 notch"],
+            help="Use para subir ou baixar um notch em casos excepcionais, com base em fatores não capturados pelo modelo."
+        )
+
+    with col_o2:
+        justificativa_override = st.text_area(
+            "Justificativa para override (se houver):",
+            value="",
+            height=80,
+            placeholder="Ex.: Concentração elevada de sacado, risco jurídico, evento climático recente, governança fraca, etc."
+        )
+
+    rating_cod_final, houve_override = aplica_override_rating(
+        rating_cod_original,
+        ajuste_rating
+    )
+
+    rating_label_final = rating_cod_final 
+
+    st.markdown("### 🏁 Resultado Final do Rating")
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric(
+        "Rating Financeiro (Base)",
+        rating_cod_original,
+        help="Resultado exclusivo do modelo quantitativo financeiro."
+    )
+
+    c2.metric(
+        "Override Aplicado",
+        ajuste_rating,
+        help="Ajuste discricionário com base em fatores qualitativos."
+    )
+
+    c3.metric(
+        "Rating Final",
+        rating_cod_final,
+        help="Rating após aplicação do julgamento."
+    )
+
+    st.markdown("### 💰 Precificação Inicial Sugerida")
+
+    SPREAD_POR_RATING = {
+        "AAA": 0.30,
+        "AA+": 0.45,
+        "AA": 0.67,
+        "AA-": 0.90,
+        "A+": 1.20,
+        "A": 1.56,
+        "A-": 2.00,
+        "BBB+": 2.60,
+        "BBB": 3.30,
+        "BBB-": 4.10,
+        "BB+": 5.20,
+        "BB": 6.50,
+        "BB-": 8.00,
+        "B+": 10.00,
+        "B": 12.50,
+        "B-": 15.50,
+        "CCC": 20.00,
+        "CC": 25.00,
+        "C": 30.00,
+    }
+
+
+    spread_sugerido = SPREAD_POR_RATING.get(rating_cod_final, None)
+
+
+    c1, c2 = st.columns(2)
+
+    c1.metric(
+        "Rating de Referência",
+        rating_cod_final
+    )
+
+    c2.metric(
+        "Spread Sugerido",
+        f"CDI + {spread_sugerido*100:.2f}%" if spread_sugerido else "n/a",
+        help="Spread inicial baseado exclusivamente no rating financeiro final."
+    )
+
+
+    ratings = list(SPREAD_POR_RATING.keys())
+    spreads = list(SPREAD_POR_RATING.values())
+
+    rating_atual = rating_cod_final  # ex: "AA+"
+    spread_atual = SPREAD_POR_RATING[rating_atual]
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(ratings, spreads, marker="o")
+    plt.scatter(
+        rating_atual,
+        spread_atual,
+        s=120,
+        zorder=5
+    )
+
+    plt.title("Curva Indicativa de Spread por Rating (CDI +)")
+    plt.xlabel("Rating de Crédito")
+    plt.ylabel("Spread (% a.a.)")
+    plt.xticks(rotation=45)
+    plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+
 
 
     # =================================================================
