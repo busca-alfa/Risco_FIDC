@@ -2800,6 +2800,303 @@ with tab_dre:
 
 with tab_rating:
 
+    st.markdown("## 📈 Análise Histórica – Dados Financeiros")
+    st.caption("Insira os valores históricos (R$). As variações percentuais são calculadas automaticamente.")
+
+    indicadores = [
+        "Faturamento",
+        "EBITDA",
+        "Resultado",
+        "Caixa",
+        "Dívida",
+        "Imobilizado",
+        "PL",
+    ]
+
+    # =========================
+    # 1. INPUT – TABELA EDITÁVEL
+    # =========================
+        # =========================
+    # INPUT – TABELA EDITÁVEL (COM DEFAULT)
+    # =========================
+    if "hist_input" not in st.session_state:
+        st.session_state["hist_input"] = pd.DataFrame(
+            {
+                "P-3": [
+                    80_000_000,   # Faturamento
+                    12_000_000,   # EBITDA
+                    6_000_000,    # Resultado
+                    5_000_000,    # Caixa
+                    15_000_000,   # Dívida
+                    20_000_000,   # Imobilizado
+                    25_000_000,   # PL
+                ],
+                "P-2": [
+                    90_000_000,
+                    14_000_000,
+                    7_000_000,
+                    6_000_000,
+                    16_000_000,
+                    22_000_000,
+                    27_000_000,
+                ],
+                "P-1": [
+                    100_000_000,
+                    16_000_000,
+                    8_000_000,
+                    7_000_000,
+                    18_000_000,
+                    24_000_000,
+                    30_000_000,
+                ],
+                "Atual": [
+                    115_000_000,
+                    19_000_000,
+                    10_000_000,
+                    9_000_000,
+                    20_000_000,
+                    26_000_000,
+                    34_000_000,
+                ],
+            },
+            index=[
+                "Faturamento",
+                "EBITDA",
+                "Resultado",
+                "Caixa",
+                "Dívida",
+                "Imobilizado",
+                "PL",
+            ]
+        )
+
+
+    df_input = st.data_editor(
+        st.session_state["hist_input"],
+        use_container_width=True,
+        num_rows="fixed",
+        height=300,
+        key="hist_input_editor",
+    )
+
+    # =========================
+    # 2. CÁLCULO DAS VARIAÇÕES
+    # =========================
+    def delta(a, b):
+        if a > 0 and b > 0:
+            return (b / a - 1)
+        return np.nan
+
+    df_delta = pd.DataFrame(index=indicadores)
+    df_delta["Δ P-3 → P-2"] = [delta(df_input.loc[i, "P-3"], df_input.loc[i, "P-2"]) for i in indicadores]
+    df_delta["Δ P-2 → P-1"] = [delta(df_input.loc[i, "P-2"], df_input.loc[i, "P-1"]) for i in indicadores]
+    df_delta["Δ P-1 → Atual"] = [delta(df_input.loc[i, "P-1"], df_input.loc[i, "Atual"]) for i in indicadores]
+
+    # =========================
+    # 3. VISUAL – LADO A LADO
+    # =========================
+    c1, c2 = st.columns([3, 2])
+
+    with c1:
+        st.markdown("### 📥 Valores Históricos")
+        st.dataframe(
+            df_input.style.format("R$ {:,.0f}"),
+            use_container_width=True,
+        )
+
+    with c2:
+        st.markdown("### 📊 Variações Percentuais")
+        st.dataframe(
+            df_delta.style
+                .format("{:+.1%}")
+                .applymap(
+                    lambda v: "color: green;" if v > 0 else "color: red;",
+                ),
+            use_container_width=True,
+        )
+
+    # =========================
+    # 4. CAGR – RESUMO VISUAL
+    # =========================
+    def cagr(v0, v1, anos=3):
+        if v0 > 0 and v1 > 0:
+            return (v1 / v0) ** (1 / anos) - 1
+        return None
+
+    st.markdown("### 📈 Crescimento Estrutural (CAGR)")
+
+    cols = st.columns(len(indicadores))
+
+    for col, ind in zip(cols, indicadores):
+        v_ini = df_input.loc[ind, "P-3"]
+        v_fim = df_input.loc[ind, "Atual"]
+        valor = cagr(v_ini, v_fim)
+
+        with col:
+            st.markdown(
+                f"""
+                <div style="
+                    padding:6px;
+                    border-radius:6px;
+                    background:#f7f9fc;
+                    border:1px solid #e0e0e0;
+                    text-align:center;
+                    font-size:11px;
+                ">
+                    <strong>{ind}</strong><br>
+                    <span style="font-size:13px; color:{'#1a7f37' if valor and valor > 0 else '#c62828'}">
+                        {f"{valor*100:+.1f}%" if valor is not None else "n/a"}
+                    </span><br>
+                    <span style="font-size:10px; color:#666;">CAGR 3 anos</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # =========================
+    # 5. INDICADORES ESTRUTURAIS – ÚLTIMO PERÍODO
+    # =========================
+    st.markdown("### 🧩 Estrutura Financeira – Último Período")
+
+    def safe_div(a, b):
+        if b > 0:
+            return a / b
+        return None
+
+    indicadores_base = {
+        "Margem EBITDA": safe_div(
+            df_input.loc["EBITDA", "Atual"],
+            df_input.loc["Faturamento", "Atual"],
+        ),
+        "Caixa / EBITDA": safe_div(
+            df_input.loc["Caixa", "Atual"],
+            df_input.loc["EBITDA", "Atual"],
+        ),
+        "Dívida / EBITDA": safe_div(
+            df_input.loc["Dívida", "Atual"],
+            df_input.loc["EBITDA", "Atual"],
+        ),
+        "Dívida / PL": safe_div(
+            df_input.loc["Dívida", "Atual"],
+            df_input.loc["PL", "Atual"],
+        ),
+        "Caixa / Dívida": safe_div(
+            df_input.loc["Caixa", "Atual"],
+            df_input.loc["Dívida", "Atual"],
+        ),
+        # extras que ajudam MUITO em crédito
+        "EBITDA / PL": safe_div(
+            df_input.loc["EBITDA", "Atual"],
+            df_input.loc["PL", "Atual"],
+        ),
+        "Resultado / Receita": safe_div(
+            df_input.loc["Resultado", "Atual"],
+            df_input.loc["Faturamento", "Atual"],
+        ),
+    }
+
+    cols = st.columns(len(indicadores_base))
+
+    for col, (nome, valor) in zip(cols, indicadores_base.items()):
+        with col:
+            st.markdown(
+                f"""
+                <div style="
+                    padding:6px;
+                    border-radius:6px;
+                    background:#ffffff;
+                    border:1px solid #e0e0e0;
+                    text-align:center;
+                    font-size:11px;
+                ">
+                    <strong>{nome}</strong><br>
+                    <span style="font-size:13px; color:#0d47a1;">
+                        {f"{valor:.2f}" if valor is not None else "n/a"}
+                    </span><br>
+                    <span style="font-size:10px; color:#777;">Último período</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # =========================
+    # 6. SCORES POR INDICADOR
+    # =========================
+    def score_faixa(valor, faixas):
+        """
+        faixas = [(limite_min, score), ...] ordenado desc
+        """
+        if valor is None or np.isnan(valor):
+            return 0
+        for limite, score in faixas:
+            if valor >= limite:
+                return score
+        return faixas[-1][1]
+
+    scores = {}
+
+    # Crescimento
+    scores["CAGR Receita"] = score_faixa(
+        cagr(
+            df_input.loc["Faturamento", "P-3"],
+            df_input.loc["Faturamento", "Atual"]
+        ),
+        [(0.15,100),(0.08,80),(0.03,60),(0.0,40),(-1,10)]
+    )
+
+    scores["CAGR EBITDA"] = score_faixa(
+        cagr(
+            df_input.loc["EBITDA", "P-3"],
+            df_input.loc["EBITDA", "Atual"]
+        ),
+        [(0.15,100),(0.08,80),(0.03,60),(0.0,40),(-1,10)]
+    )
+
+    # Rentabilidade
+    scores["Margem EBITDA"] = score_faixa(
+        indicadores_base["Margem EBITDA"],
+        [(0.20,100),(0.10,70),(0.05,40),(-1,10)]
+    )
+
+    # Caixa
+    scores["Caixa / EBITDA"] = score_faixa(
+        indicadores_base["Caixa / EBITDA"],
+        [(1.0,100),(0.5,70),(0.0,40),(-1,10)]
+    )
+
+    # Alavancagem
+    scores["Dívida / EBITDA"] = score_faixa(
+        -indicadores_base["Dívida / EBITDA"] if indicadores_base["Dívida / EBITDA"] else None,
+        [(-1.5,100),(-3.0,70),(-5.0,40),(-99,10)]
+    )
+
+    st.markdown("### 🎯 Scores de Crédito – Indicadores")
+
+    cols = st.columns(len(scores))
+
+    for col, (nome, score) in zip(cols, scores.items()):
+        with col:
+            st.markdown(
+                f"""
+                <div style="
+                    padding:6px;
+                    border-radius:6px;
+                    background:#f9f9f9;
+                    border:1px solid #ddd;
+                    text-align:center;
+                    font-size:11px;
+                ">
+                    <strong>{nome}</strong><br>
+                    <span style="font-size:14px; color:#0d47a1;">
+                        {score}
+                    </span><br>
+                    <span style="font-size:10px; color:#666;">Score (0–100)</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+
     # =================================================================
     # 1. PARÂMETROS DO MODELO / CONSTANTES
     # =================================================================
