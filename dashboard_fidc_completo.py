@@ -143,6 +143,9 @@ def format_brl(x):
 def format_brl_mil(x):
     return f"R$ {x/1000:,.0f}"
 
+def taxa_anual_para_mensal(taxa_anual):
+    return (1 + taxa_anual) ** (1/12) - 1
+
 # -------------------------------------------------------------------
 # SIDEBAR – PARÂMETROS
 # -------------------------------------------------------------------
@@ -2814,6 +2817,27 @@ RATING_CUTS = [
 def spread_por_rating(rating):
     return SPREAD_POR_RATING.get(rating, None)
 
+SPREAD_POR_RATING = {
+        "AAA": 0.0030,
+        "AA+": 0.0045,
+        "AA": 0.0067,
+        "AA-": 0.0090,
+        "A+": 0.0120,
+        "A": 0.0156,
+        "A-": 0.02,
+        "BBB+": 0.026,
+        "BBB": 0.033,
+        "BBB-": 0.041,
+        "BB+": 0.05,
+        "BB": 0.065,
+        "BB-": 0.08,
+        "B+": 0.10,
+        "B": 0.125,
+        "B-": 0.155,
+        "CCC": 0.20,
+        "CC": 0.25,
+        "C": 0.3,
+    }
 
 with tab_rating:
 
@@ -3335,21 +3359,7 @@ with tab_rating:
     # -------------------------------------------------------------
     st.markdown("---")
     st.header("🧭 Ajuste de Julgamento (Override de Rating)")
-
-    
-
-    rating_cod_original = rating_final
-    def aplica_override_rating(rating_cod_original, ajuste_rating):
-        """
-        Aplica override manual (+1 ou -1 notch) ao rating original.
-
-        Retorna:
-            rating_cod_final (str)
-            houve_override (bool)
-        """
-
-        # Ordem hierárquica dos ratings (do melhor para o pior)
-        rating_ordem = [
+    rating_ordem = [
             "AAA", "AA+", "AA", "AA-",
             "A+", "A", "A-",
             "BBB+", "BBB", "BBB-",
@@ -3357,26 +3367,46 @@ with tab_rating:
             "B+", "B", "B-",
             "CCC", "CC", "C",
             ]
+    
 
-        idx = rating_ordem.index(rating_cod_original)
+    rating_cod_original = rating_final
+    def aplica_override_rating(rating_cod_original, ajuste_notch, rating_ordem):
+        """
+        Aplica override manual (múltiplos notches) ao rating original.
 
-        if ajuste_rating == "↑ +1 notch" and idx > 0:
-            return rating_ordem[idx - 1], True
+        Retorna:
+            rating_cod_final (str)
+            houve_override (bool)
+        """
 
-        if ajuste_rating == "↓ -1 notch" and idx < len(rating_ordem) - 1:
-            return rating_ordem[idx + 1], True
+        idx_original = rating_ordem.index(rating_cod_original)
+        idx_final = idx_original - ajuste_notch
 
-        return rating_cod_original, False
+        # Garante que o índice fique dentro dos limites
+        idx_final = max(0, min(idx_final, len(rating_ordem) - 1))
+
+        rating_cod_final = rating_ordem[idx_final]
+        houve_override = ajuste_notch != 0
+
+        return rating_cod_final, houve_override
+
 
 
     col_o1, col_o2 = st.columns([1, 2])
 
     with col_o1:
-        ajuste_rating = st.selectbox(
-            "Ajuste de julgamento",
-            ["Sem ajuste", "↑ +1 notch", "↓ -1 notch"],
-            help="Use para subir ou baixar um notch em casos excepcionais, com base em fatores não capturados pelo modelo."
+        ajuste_notch = st.slider(
+            "Ajuste de julgamento (notches)",
+            min_value=-5,
+            max_value=5,
+            value=0,
+            step=1,
+            help=(
+                "Ajuste discricionário final do rating, em notches. "
+                "Valores positivos melhoram o rating; negativos pioram."
+            )
         )
+
 
     with col_o2:
         justificativa_override = st.text_area(
@@ -3388,8 +3418,10 @@ with tab_rating:
 
     rating_cod_final, houve_override = aplica_override_rating(
         rating_cod_original,
-        ajuste_rating
+        ajuste_notch,
+        rating_ordem
     )
+
 
     rating_label_final = rating_cod_final 
 
@@ -3405,9 +3437,10 @@ with tab_rating:
 
     c2.metric(
         "Override Aplicado",
-        ajuste_rating,
-        help="Ajuste discricionário com base em fatores qualitativos."
+        f"{ajuste_notch:+d} notches" if houve_override else "Sem ajuste",
+        help="Ajuste discricionário final aplicado ao rating financeiro."
     )
+
 
     c3.metric(
         "Rating Final",
@@ -3415,46 +3448,65 @@ with tab_rating:
         help="Rating após aplicação do julgamento."
     )
 
+    # -------------------------------------------------------------
+    # SPREAD INDICATIVO EM FAIXA (POR RATING)
+    # -------------------------------------------------------------
+    idx = rating_ordem.index(rating_cod_final)
+
+    # Ratings adjacentes
+    rating_melhor = rating_ordem[max(idx - 1, 0)]
+    rating_pior = rating_ordem[min(idx + 1, len(rating_ordem) - 1)]
+
+    # Spreads anuais
+    spread_min = SPREAD_POR_RATING[rating_melhor]
+    spread_max = SPREAD_POR_RATING[rating_pior]
+
+    # 1. Soma CDI + Spread para ter a Taxa Total Anual
+    # Importante: cdi_aa_pct deve estar em decimal (ex: 0.15 para 15%)
+    taxa_total_anual_min = (cdi_aa_pct / 100) + spread_min
+    taxa_total_anual_max = (cdi_aa_pct / 100) + spread_max
+
+    # 2. Converte a Taxa Total Anual para Mensal (Juros Compostos)
+    # Fórmula: (1 + taxa)^(1/12) - 1
+    taxa_mensal_min_calc = (1 + taxa_total_anual_min) ** (1/12) - 1
+    taxa_mensal_max_calc = (1 + taxa_total_anual_max) ** (1/12) - 1
+
+
+    # Texto explicativo (delta)
+    delta_texto = (
+        f"Faixa indicativa entre os ratings {rating_ordem[idx - 1]} e {rating_ordem[idx + 1]}"
+        if idx > 0 and idx < len(rating_ordem) - 1
+        else "Faixa limitada por ausência de rating adjacente"
+    )
+
     st.markdown("### 💰 Precificação Inicial Sugerida")
-
-    SPREAD_POR_RATING = {
-        "AAA": 0.30,
-        "AA+": 0.45,
-        "AA": 0.67,
-        "AA-": 0.90,
-        "A+": 1.20,
-        "A": 1.56,
-        "A-": 2.00,
-        "BBB+": 2.60,
-        "BBB": 3.30,
-        "BBB-": 4.10,
-        "BB+": 5.20,
-        "BB": 6.50,
-        "BB-": 8.00,
-        "B+": 10.00,
-        "B": 12.50,
-        "B-": 15.50,
-        "CCC": 20.00,
-        "CC": 25.00,
-        "C": 30.00,
-    }
-
-
-    spread_sugerido = SPREAD_POR_RATING.get(rating_cod_final, None)
-
 
     c1, c2 = st.columns(2)
 
     c1.metric(
         "Rating de Referência",
-        rating_cod_final
+        rating_cod_final,
+        help="Rating final após modelo financeiro e override de julgamento."
     )
 
     c2.metric(
-        "Spread Sugerido",
-        f"CDI + {spread_sugerido*100:.2f}%" if spread_sugerido else "n/a",
-        help="Spread inicial baseado exclusivamente no rating financeiro final."
+        "Taxa Indicativa (CDI + Spread)",
+        # Valor Principal: Mostra o Spread Anual (CDI + X%)
+        f"CDI + {spread_min*100:.2f}% a CDI + {spread_max*100:.2f}%",
+        
+        # Delta (Verde): Mostra a Taxa Efetiva Mensal Calculada Corretamente
+        delta=(
+            f"Taxa mensal: {taxa_mensal_min_calc*100:.4f}% "
+            f"a {taxa_mensal_max_calc*100:.4f}% a.m."
+        ),
+        help=(
+            f"Considerando CDI de {cdi_aa_pct*100:.1f}% a.a.\n"
+            "O valor principal é o spread anual sobre o CDI.\n"
+            "O valor em verde é a taxa final convertida para mês (juros compostos)."
+        )
     )
+
+
 
 
     ratings = list(SPREAD_POR_RATING.keys())
@@ -3463,23 +3515,66 @@ with tab_rating:
     rating_atual = rating_cod_final  # ex: "AA+"
     spread_atual = SPREAD_POR_RATING[rating_atual]
 
-    plt.figure(figsize=(10, 4))
-    plt.plot(ratings, spreads, marker="o")
-    plt.scatter(
-        rating_atual,
-        spread_atual,
-        s=120,
-        zorder=5
+    idx = ratings.index(rating_atual)
+
+    x_min = idx - 0.5 if idx > 0 else idx
+    x_max = idx + 0.5 if idx < len(ratings) - 1 else idx
+
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+
+    # Curva geral de spreads
+    ax.plot(
+        ratings,
+        spreads,
+        marker="o",
+        linewidth=2
     )
 
-    plt.title("Curva Indicativa de Spread por Rating (CDI +)")
-    plt.xlabel("Rating de Crédito")
-    plt.ylabel("Spread (% a.a.)")
-    plt.xticks(rotation=45)
-    plt.grid(True, alpha=0.3)
+    # Faixa vertical indicativa de spread (ratings adjacentes)
+    ax.axvspan(
+        x_min,
+        x_max,
+        alpha=0.20,
+        label="Faixa Indicativa de Rating"
+    )
 
-    plt.tight_layout()
-    plt.show()
+
+    # Ponto do rating atual (destacado)
+    ax.scatter(
+        rating_atual,
+        spread_atual,
+        color="red",
+        s=120,
+        zorder=5,
+        label="Rating Atual"
+    )
+
+    # Anotação opcional do ponto
+    ax.annotate(
+        f"{rating_atual}\nCDI + {spread_atual*100:.2f}%",
+        (ratings.index(rating_atual), spread_atual),
+        textcoords="offset points",
+        xytext=(0, 10),
+        ha="center",
+        fontsize=9,
+        color="red"
+    )
+
+    ax.set_title("Curva Indicativa de Spread por Rating (CDI +)")
+    ax.set_xlabel("Rating de Crédito")
+    ax.set_ylabel("Spread (% a.a.)")
+
+    ax.set_xticks(range(len(ratings)))
+    ax.set_xticklabels(ratings, rotation=45)
+
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    fig.tight_layout()
+
+    st.pyplot(fig)
+
 
 
 
@@ -3829,11 +3924,19 @@ with tab_rating:
         col_o1, col_o2 = st.columns([1, 2])
 
         with col_o1:
-            ajuste_rating = st.selectbox(
-                "Ajuste de julgamento",
-                ["Sem ajuste", "↑ +1 notch", "↓ -1 notch"],
-                help="Use para subir/baixar um notch em casos excepcionais."
+            ajuste_notch = st.slider(
+                "Ajuste de julgamento (notches)",
+                min_value=-5,
+                max_value=5,
+                value=0,
+                step=1,
+                help=(
+                    "Ajuste discricionário final do rating, em notches. "
+                    "Valores positivos melhoram o rating; negativos pioram. "
+                    "Utilizar apenas para fatores não capturados pelo modelo."
+                )
             )
+
 
         with col_o2:
             justificativa_override = st.text_area(
