@@ -1937,24 +1937,19 @@ with tab_alvo:
                     delta_msg = f"{delta_taxa:+.4f} p.p. vs Atual"
         
                 k1.metric(
-                    "Taxa Mínima na Carteira",
+                    "Taxa Média Ponderada",
                     f"{taxa_mes_nec:.4f}% a.m.",
                     delta=delta_msg,
                     delta_color=cor_delta,
                     help="Taxa média mensal necessária nos recebíveis para bater a meta da Cota Júnior."
                 )
         
+                     
                 k2.metric(
-                    "Receita Diária Necessária (Carteira)",
-                    format_brl(rec_carteira_necessaria),
-                    delta=format_brl(rec_carteira_necessaria - receita_carteira_dia),
-                    delta_color=cor_delta
-                )
-        
-                k3.metric(
                     "Spread Necessário vs CDI",
                     f"{(taxa_mes_nec - (cdi_am * 100.0)):.2f}% a.m.",
-                    help="Taxa da carteira menos o CDI mensal."
+                    help="Taxa da carteira menos o CDI mensal.",
+                    delta=f"CDI:{cdi_am*100:.2f}% a.m.",
                 )
         
             st.markdown("---")
@@ -3585,13 +3580,14 @@ with tab_rating:
     # =============================
     # INPUTS DA OPERAÇÃO E POLÍTICA
     # =============================
-    col1, col2, col3, col4 = st.columns([2, 1.2, 1.5, 1])
+    col1, col2, col3, col4 = st.columns([1.5, 1.2,1.5, 1.2])
 
     with col1:
         valor_operacao = st.number_input(
             "Valor da Operação (R$)",
             min_value=0.0,
-            step=100_000.0,
+            step=10_000.0,
+            value=10_000.0,
             format="%.2f"
         )
 
@@ -3605,20 +3601,21 @@ with tab_rating:
         ) / 100
 
     with col3:
+        caixa_disponivel = st.number_input(
+            "Caixa disponível no Fundo",
+            min_value=0.0,
+            value=(1-pct_recebiveis)*pl_total,
+            step=10_000.0,
+            format="%.2f"
+        )
+
+    with col4:
         rating_minimo = st.selectbox(
             "Rating mínimo permitido pelo fundo",
             rating_ordem,
             index=rating_ordem.index("BBB"),
             key="rating_minimo_fundo"
         )
-
-    with col4:
-        prazo_operacao_dias = st.number_input(
-            "Prazo (dias)",
-            min_value=1,
-            step=1
-        )
-
 
     # =============================
     # CÁLCULOS DE ENQUADRAMENTO
@@ -3692,9 +3689,9 @@ with tab_rating:
 
 
     c3.metric(
-        "Prazo",
-        f"{prazo_operacao_dias} dias"
-    )
+        "% do caixa a ser usado",
+        f"{(valor_operacao/caixa_disponivel)*100:.2f}%",
+        )
 
     c4.metric(
         "Impacto na Cota Júnior",
@@ -3702,743 +3699,259 @@ with tab_rating:
         help="Percentual da cota júnior consumido em caso de default total."
     )
 
-   
+   # -------------------------------------------------------------
+    # ESTRUTURA DA OPERAÇÃO — PRÊMIO ESTRUTURAL
+    # -------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("📐 Estrutura da Operação — Prêmio de Risco Estrutural")
+
+    st.caption(
+        "Este bloco avalia riscos operacionais e jurídicos da operação que não "
+        "são capturados pelo rating do sacado, ajustando a taxa exigida."
+    )
+
     # =============================
-    # EXPLICAÇÕES AUTOMÁTICAS
+    # INPUTS ESTRUTURAIS
     # =============================
-    st.markdown("### 📝 Análise de Risco e Política")
+    col_s1, col_s2 = st.columns(2)
 
-    observacoes = []
-
-    if not enquadrado_rating:
-        observacoes.append(
-            f"- Rating final ({rating_cod_final}) abaixo do mínimo permitido ({rating_minimo})."
+    with col_s1:
+        operacao_confirmada = st.selectbox(
+            "A operação é confirmada?",
+            ["Sim", "Não"],
+            index=0,
+            key="op_confirmada"
         )
 
-    if not enquadrado_sacado:
-        observacoes.append(
-            f"- Concentração de {pct_pl_total*100:.2f}% do PL excede o limite de {limite_pct_pl_sacado*100:.1f}% por sacado."
+        forma_pagamento = st.selectbox(
+            "Forma de pagamento",
+            ["Boleto emitido pelo FIDC", "Comissária (conta do cedente)"],
+            index=0,
+            key="forma_pagamento"
         )
 
-    if impacto_junior > 0.30:
-        observacoes.append(
-            "- Impacto elevado na cota júnior em cenário de default (>30%)."
+    with col_s2:
+        recompra_cedente = st.selectbox(
+            "Existe recompra por parte do cedente?",
+            ["Sim", "Não"],
+            index=0,
+            key="recompra"
         )
 
-    if not observacoes:
-        observacoes.append(
-            "- Operação enquadrada nos limites de política e concentração do fundo."
+        trava_domicilio = st.selectbox(
+            "Existe trava de domicílio bancário?",
+            ["Sim", "Não"],
+            index=0,
+            key="trava"
         )
 
-    for obs in observacoes:
-        st.write(obs)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # =================================================================
-    # 1. PARÂMETROS DO MODELO / CONSTANTES
-    # =================================================================
-
-    # Tabela de cortes de PD -> Rating
-    RATING_CUTS = [
-        ("A", 0.010, "Baixo Risco"),           # PD <= 1,0% a.a.
-        ("B", 0.030, "Risco Moderado"),        # 1,0% < PD <= 3,0% a.a.
-        ("C", 0.080, "Risco Elevado"),         # 3,0% < PD <= 8,0% a.a.
-        ("D", 1.000, "Alto Risco / Rejeitar")  # PD > 8,0% a.a.
-    ]
-    RATING_ORDER = ["A", "B", "C", "D"]
-
-    # Fator de risco setorial (penaliza ou melhora o crédito)
-    SETORES_RISCO = {
-        "Serviços Essenciais (energia, água, telecom)": -0.20,
-        "Alimentos & Farma": -0.15,
-        "Varejo Não-Duráveis": 0.00,
-        "Varejo Duráveis / Moda": 0.20,
-        "Construção Civil & Imobiliário": 0.30,
-        "Transportes & Logística": 0.10,
-        "Tecnologia / Startups": 0.30,
-        "Setor Público / Concessões": -0.10,
-        "Outros / Neutro": 0.00,
+    # =============================
+    # MATRIZ DE AJUSTES (bps)
+    # =============================
+    ajustes_bps = {
+        "operacao_confirmada": 0 if operacao_confirmada == "Sim" else 20,
+        "forma_pagamento": 0 if forma_pagamento == "Boleto emitido pelo FIDC" else 25,
+        "recompra_cedente": 0 if recompra_cedente == "Sim" else 40,
+        "trava_domicilio": 0 if trava_domicilio == "Sim" else 30,
     }
 
-    # Coeficientes do modelo Logit (hipotéticos)
-    COEFICIENTES = {
-        "INTERCEPT": 2.5,
-        "LIQUIDEZ_CORRENTE": -0.8,
-        "ENDIVIDAMENTO_GERAL": 1.5,
-        "MARGEM_EBITDA": -1.2,
-        "TEMPO_RELACIONAMENTO": -0.05,
-        "INADIMPLENCIA_RECENTE": 2.0,
-        "CONCENTRACAO_SACADO": 1.0,
-        "FATOR_SETORIAL": 0.7,
-    }
+    premio_estrutural_bps = sum(ajustes_bps.values())
 
-    # Políticas padrão de concentração (ajuste depois se quiser)
-    LIMITE_MAX_PL = 0.25       # 25% do PL
-    LIMITE_MAX_JUNIOR = 1.50   # 150% da Cota Júnior
-
-
-
-    # -----------------------------------------------------------------
-    # Funções auxiliares
-    # -----------------------------------------------------------------
-    def map_pd_to_rating(pd_anual: float):
-        for codigo, limite, desc in RATING_CUTS:
-            if pd_anual <= limite:
-                label = f"{codigo} ({desc})"
-                return codigo, desc, label
-        return "D", "Alto Risco / Rejeitar", "D (Alto Risco / Rejeitar)"
-
-    def aplica_override_rating(codigo_original: str, ajuste: str):
-        idx = RATING_ORDER.index(codigo_original)
-
-        if ajuste == "↑ +1 notch" and idx > 0:
-            idx_final = idx - 1
-        elif ajuste == "↓ -1 notch" and idx < len(RATING_ORDER) - 1:
-            idx_final = idx + 1
-        else:
-            idx_final = idx
-
-        codigo_final = RATING_ORDER[idx_final]
-        houve_override = (codigo_final != codigo_original)
-        return codigo_final, houve_override
-
-    def calcular_rating(
-        liquidez_corrente: float,
-        endividamento_geral: float,
-        margem_ebitda: float,
-        tempo_relacionamento: int,
-        inadimplencia_recente: bool,
-        concentracao_sacado: float,
-        fator_setorial: float,
-    ):
-        z = (
-            COEFICIENTES["INTERCEPT"]
-            + COEFICIENTES["LIQUIDEZ_CORRENTE"] * liquidez_corrente
-            + COEFICIENTES["ENDIVIDAMENTO_GERAL"] * endividamento_geral
-            + COEFICIENTES["MARGEM_EBITDA"] * margem_ebitda
-            + COEFICIENTES["TEMPO_RELACIONAMENTO"] * tempo_relacionamento
-            + COEFICIENTES["INADIMPLENCIA_RECENTE"] * (1 if inadimplencia_recente else 0)
-            + COEFICIENTES["CONCENTRACAO_SACADO"] * concentracao_sacado
-            + COEFICIENTES["FATOR_SETORIAL"] * fator_setorial
+    # =============================
+    # CARD FINAL
+    # =============================
+    st.metric(
+        label="Prêmio Estrutural da Operação",
+        value=f"{premio_estrutural_bps:.0f} bps",
+        help=(
+            "Prêmio adicional exigido em função de riscos operacionais, "
+            "jurídicos e de liquidação da estrutura da operação."
         )
-        pd_anual = 1 / (1 + np.exp(-z))
-        return z, pd_anual
+    )
 
-    # =================================================================
-    # 2. DASHBOARD STREAMLIT – RATING + PRICING + LIMITE
-    # =================================================================
-    def rating_dashboard():
-        st.title("📊 FIDC Pricing & Rating Model v2.0")
-        st.markdown(
-            """
-            Modelo de decisão de crédito com **rating**, **perda esperada (EL)**,
-            **precificação da taxa de deságio** e **análise de limite de exposição**
-            para o sacado.
-            """
-        )
+    # ============================================================
+    # RACIONAL: RELACIONAMENTO COM O FUNDO E RESTRIÇÕES RECENTES
+    # ============================================================
 
-        # -------------------------------------------------------------
-        # INPUTS – BLOCO 1: RISCO DE CRÉDITO
-        # -------------------------------------------------------------
-        st.markdown("---")
-        st.header("⚙️ Parâmetros do Sacado e da Exposição")
+    st.markdown("### 🤝 Relacionamento e Risco de Momento")
 
-        col1, col2 = st.columns(2)
+    col_r1, col_r2 = st.columns(2)
 
-        with col1:
-            st.subheader("Indicadores Financeiros")
-            liquidez_corrente = st.number_input(
-                "1. Liquidez Corrente (Ativo Circ. / Passivo Circ.)",
-                min_value=0.0,
-                value=1.50,
-                step=0.10,
-                format="%.2f",
-                help="Valor ideal > 1,0. Quanto maior, melhor."
-            )
-            endividamento_geral = st.number_input(
-                "2. Endividamento Geral (Passivo Total / Ativo Total)",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.60,
-                step=0.05,
-                format="%.2f",
-                help="Valor ideal < 0,7. Quanto menor, melhor."
-            )
-            margem_ebitda = st.number_input(
-                "3. Margem EBITDA (EBITDA / Receita Líquida)",
-                min_value=-1.0,
-                max_value=1.0,
-                value=0.15,
-                step=0.01,
-                format="%.2f",
-                help="Margem de lucro operacional. Quanto maior, melhor."
-            )
-
-        with col2:
-            st.subheader("Comportamento, Concentração e Setor")
-            tempo_relacionamento = st.number_input(
-                "4. Tempo de Relacionamento (meses)",
-                min_value=0,
-                value=36,
-                step=6,
-                help="Tempo de relacionamento com o cedente/fundo."
-            )
-            inadimplencia_recente = st.checkbox(
-                "5. Inadimplência Recente (restrição/protesto últimos 12 meses)",
-                value=False,
-                help="Marque se houver qualquer registro de inadimplência recente."
-            )
-            concentracao_sacado_pct = st.number_input(
-                "6. Concentração do Sacado na Carteira (% dos recebíveis)",
-                min_value=0.0,
-                max_value=100.0,
-                value=10.0,
-                step=1.0,
-                format="%.2f",
-                help="Exposição deste sacado / carteira total de recebíveis do FIDC."
-            )
-            concentracao_sacado = concentracao_sacado_pct / 100.0
-
-            setor_economico = st.selectbox(
-                "7. Setor Econômico do Sacado",
-                list(SETORES_RISCO.keys()),
-                help="Cada setor tem um fator de risco pré-definido (penalização ou alívio)."
-            )
-            fator_setorial = SETORES_RISCO[setor_economico]
-
-        # -------------------------------------------------------------
-        # INPUTS – BLOCO 2: PRAZO, LGD, FUNDO E LIMITE DESEJADO
-        # -------------------------------------------------------------
-        st.markdown("---")
-        st.header("📏 Parâmetros da Operação, do Fundo e Limite Desejado")
-
-        c1, c2, c3 = st.columns(3)
-
-        with c1:
-            prazo_dias = st.number_input(
-                "Prazo médio da carteira (dias úteis)",
-                min_value=1,
-                value=60,
-                step=5,
-                help="Prazo médio ponderado dos recebíveis deste sacado."
-            )
-
-        with c2:
-            lgd_pct = st.number_input(
-                "LGD – Loss Given Default (% da exposição)",
-                min_value=0.0,
-                max_value=100.0,
-                value=100.0,
-                step=5.0,
-                format="%.2f",
-                help="Percentual da exposição perdido em caso de default."
-            )
-            lgd = lgd_pct / 100.0
-
-        with c3:
-            custo_fundo_aa = st.number_input(
-                "Custo de Captação do Fundo (% a.a.)",
-                min_value=0.0,
-                value=15.0,
-                step=0.5,
-                format="%.2f"
-            ) / 100.0
-            spread_min_am = st.number_input(
-                "Spread Mínimo Desejado (% a.m.)",
-                min_value=0.0,
-                value=0.50,
-                step=0.10,
-                format="%.2f"
-            ) / 100.0
-
-        # Limite desejado em R$
-        st.markdown("#### 💳 Limite de Exposição Desejado para o Sacado")
-        c_lim = st.columns(1)[0]
-        with c_lim:
-            limite_desejado = st.number_input(
-                "Limite desejado (R$)",
-                min_value=0.0,
-                value=5_000_000.0,
-                step=250_000.0,
-                format="%.2f",
-                help="Limite total de crédito/exposição que você pretende aprovar para este sacado."
-            )
-
-        # -------------------------------------------------------------
-        # INPUTS – BLOCO 3: DINÂMICA DE CAIXA / ANTECIPAÇÃO DE RECEBÍVEIS
-        # -------------------------------------------------------------
-        st.markdown("#### 💸 Dinâmica de Caixa e Necessidade de Antecipação de Recebíveis")
-
-        c_nc1, c_nc2, c_nc3, c_nc4 = st.columns(4)
-
-        with c_nc1:
-            faturamento_mensal = st.number_input(
-                "Faturamento bruto mensal (R$)",
-                min_value=0.0,
-                value=10_000_000.0,
-                step=500_000.0,
-                format="%.2f",
-                help="Faturamento médio mensal da empresa/sacado."
-            )
-
-        with c_nc2:
-            pmr_dias = st.number_input(
-                "Prazo médio de recebimento (dias)",
-                min_value=0,
-                value=60,
-                step=5,
-                help="Dias corridos médios entre venda e recebimento."
-            )
-
-        with c_nc3:
-            pmp_dias = st.number_input(
-                "Prazo médio de pagamento a fornecedores (dias)",
-                min_value=0,
-                value=30,
-                step=5,
-                help="Dias corridos médios entre compra e pagamento."
-            )
-
-        with c_nc4:
-            caixa_proprio = st.number_input(
-                "Caixa livre disponível (R$)",
-                min_value=0.0,
-                value=2_000_000.0,
-                step=250_000.0,
-                format="%.2f",
-                help="Caixa próprio que a empresa tem para financiar o giro."
-            )
-
-        # Cálculo da necessidade de antecipação
-        if faturamento_mensal > 0:
-            vendas_dia = faturamento_mensal / 30.0  # aprox. dias corridos
-        else:
-            vendas_dia = 0.0
-
-        gap_dias = max(pmr_dias - pmp_dias, 0)  # se PMR <= PMP, não há gap de saída antes da entrada
-        necessidade_caixa = vendas_dia * gap_dias
-        necessidade_antecipacao = max(necessidade_caixa - caixa_proprio, 0.0)
-
-        if faturamento_mensal > 0:
-            dependencia_antecipacao = necessidade_antecipacao / faturamento_mensal
-        else:
-            dependencia_antecipacao = 0.0
-
-        if necessidade_antecipacao > 0:
-            cobertura_limite_necessidade = limite_desejado / necessidade_antecipacao
-        else:
-            cobertura_limite_necessidade = 0.0
-
-        # -------------------------------------------------------------
-        # CÁLCULO – RATING, PD, EL, TAXA E CONCENTRAÇÃO
-        # -------------------------------------------------------------
-        dias_uteis_ano = 252
-
-        # 1) Score e PD anual
-        z_score, pd_anual = calcular_rating(
-            liquidez_corrente,
-            endividamento_geral,
-            margem_ebitda,
-            tempo_relacionamento,
-            inadimplencia_recente,
-            concentracao_sacado,
-            fator_setorial,
-        )
-
-        # 2) Rating inicial
-        rating_cod_original, rating_desc, rating_label_original = map_pd_to_rating(pd_anual)
-
-        # 3) PD no prazo da operação
-        pd_periodo = 1 - (1 - pd_anual) ** (prazo_dias / dias_uteis_ano)
-
-        # 4) Perda Esperada (EL) no período
-        el_periodo = pd_periodo * lgd
-
-        # 5) Custo de risco médio mensal aproximado
-        taxa_risco_am = el_periodo * (dias_uteis_ano / prazo_dias) / 12.0
-
-        # 6) Custo do fundo (a.m.) e taxa final
-        custo_fundo_am = custo_fundo_aa / 12.0
-        taxa_sugerida_am = custo_fundo_am + taxa_risco_am + spread_min_am
-
-        # 7) Concentração do limite desejado
-        if pl_total > 0:
-            conc_pl = limite_desejado / pl_total
-        else:
-            conc_pl = 0.0
-
-        if valor_junior > 0:
-            conc_junior = limite_desejado / valor_junior
-        else:
-            conc_junior = 0.0
-
-        # -------------------------------------------------------------
-        # OVERRIDE DE RATING
-        # -------------------------------------------------------------
-        st.markdown("---")
-        st.header("🧭 Ajuste de Julgamento (Override de Rating)")
-
-        col_o1, col_o2 = st.columns([1, 2])
-
-        with col_o1:
-            ajuste_notch = st.slider(
-                "Ajuste de julgamento (notches)",
-                min_value=-5,
-                max_value=5,
-                value=0,
-                step=1,
-                help=(
-                    "Ajuste discricionário final do rating, em notches. "
-                    "Valores positivos melhoram o rating; negativos pioram. "
-                    "Utilizar apenas para fatores não capturados pelo modelo."
-                )
-            )
-
-
-        with col_o2:
-            justificativa_override = st.text_area(
-                "Justificativa para override (se houver):",
-                value="",
-                height=80
-            )
-
-        rating_cod_final, houve_override = aplica_override_rating(
-            rating_cod_original, ajuste_notch
-        )
-
-        desc_final = next(desc for code, _, desc in RATING_CUTS if code == rating_cod_final)
-        rating_label_final = f"{rating_cod_final} ({desc_final})"
-
-        # -------------------------------------------------------------
-        # OUTPUTS – CARDS PRINCIPAIS
-        # -------------------------------------------------------------
-        st.markdown("---")
-
-        col_rating, col_pd, col_lgd, col_taxa = st.columns(4)
-
-        col_rating.metric(
-            "Rating Final",
-            rating_label_final,
-            help=f"Rating do modelo (antes de override): {rating_label_original}."
-        )
-
-        col_pd.metric(
-            "PD Anual Estimada",
-            f"{pd_anual*100:.2f}%",
-            help="Probabilidade de default em 12 meses estimada pelo modelo logístico."
-        )
-
-        col_lgd.metric(
-            "LGD (Perda Dada a Inadimplência)",
-            f"{lgd_pct:.2f}%",
-            help="Percentual estimado de perda caso ocorra default."
-        )
-
-        taxa_base_am = custo_fundo_am + spread_min_am
-        delta_pricing = (taxa_sugerida_am - taxa_base_am) * 100.0
-        delta_msg = "Meta Atingida" if delta_pricing >= 0 else "Abaixo da Meta"
-
-        col_taxa.metric(
-            "Taxa Sugerida (a.m.)",
-            f"{taxa_sugerida_am*100:.2f}%",
-            delta=f"{delta_pricing:+.2f} p.p.",
-            delta_color="normal" if delta_pricing >= 0 else "inverse",
-            help="Taxa final combinando custo de captação, risco (EL) e spread FIDC."
-        )
-
-        # -------------------------------------------------------------
-        # CARDS – LIMITE APROVADO / CONCENTRAÇÃO
-        # -------------------------------------------------------------
-        st.markdown("#### 📌 Limite de Exposição e Concentração no Fundo")
-
-        lim1, lim2, lim3 = st.columns(3)
-
-        lim1.metric(
-            "Limite Desejado para o Sacado",
-            format_brl(limite_desejado),
-            help="Valor total de limite de crédito pretendido para este sacado."
-        )
-
-        delta_pl = (conc_pl - LIMITE_MAX_PL) * 100.0
-        lim2.metric(
-            "% do PL do Fundo",
-            f"{conc_pl*100:.2f}%",
-            delta=f"Política: {LIMITE_MAX_PL*100:.1f}% / Dif: {delta_pl:+.2f} p.p.",
-            delta_color="inverse" if conc_pl > LIMITE_MAX_PL else "normal",
-            help="Exposição deste sacado dividida pelo PL total do FIDC."
-        )
-
-        delta_jr = (conc_junior - LIMITE_MAX_JUNIOR) * 100.0
-        lim3.metric(
-            "% da Cota Júnior",
-            f"{conc_junior*100:.2f}%",
-            delta=f"Política: {LIMITE_MAX_JUNIOR*100:.1f}% / Dif: {delta_jr:+.2f} p.p.",
-            delta_color="inverse" if conc_junior > LIMITE_MAX_JUNIOR else "normal",
-            help="Limite do sacado em relação ao colchão de subordinação (Cota Júnior)."
-        )
-
-        if houve_override and ajuste_notch != "Sem ajuste" and justificativa_override.strip() == "":
-            st.warning("⚠️ Override aplicado sem justificativa preenchida.")
-
-        # -------------------------------------------------------------
-        # CARDS – NECESSIDADE DE ANTECIPAÇÃO (DERIVADA DO CICLO DE CAIXA)
-        # -------------------------------------------------------------
-        st.markdown("#### 🔄 Gap de Caixa e Dependência de Antecipação")
-
-        nc1, nc2, nc3, nc4 = st.columns(4)
-
-        nc1.metric(
-            "Necessidade de Caixa (Ciclo)",
-            format_brl(necessidade_caixa),
-            help="Vendas médias por dia × (PMR − PMP). Capital de giro necessário para financiar o ciclo."
-        )
-
-        nc2.metric(
-            "Necessidade de Antecipação",
-            format_brl(necessidade_antecipacao),
-            help="Necessidade de caixa menos o caixa próprio disponível."
-        )
-
-        nc3.metric(
-            "% Dependência de Antecipação",
-            f"{dependencia_antecipacao*100:.2f}%",
-            help="Necessidade de antecipação / faturamento mensal. Quanto maior, mais dependente de FIDC/antecipação."
-        )
-
-        nc4.metric(
-            "Cobertura da Necessidade pelo Limite",
-            "N/A" if necessidade_antecipacao == 0 else f"{cobertura_limite_necessidade*100:.2f}%",
-            help="Quanto do gap de caixa (necessidade de antecipação) é coberto pelo limite desejado."
-        )
-
-        # -------------------------------------------------------------
-        # COMPOSIÇÃO DA TAXA (WATERFALL) + PESO DAS VARIÁVEIS
-        # -------------------------------------------------------------
-        st.markdown("---")
-        st.subheader("🧮 Composição da Taxa (Pricing) & Peso das Variáveis")
-
-        col_wf, col_sens = st.columns(2)
-
-        # Waterfall
-        with col_wf:
-            st.markdown("**Waterfall de Precificação (% a.m.)**")
-
-            valores_wf = [
-                custo_fundo_am * 100.0,
-                taxa_risco_am * 100.0,
-                spread_min_am * 100.0,
-                taxa_sugerida_am * 100.0,
+    # -----------------------------
+    # INPUTS
+    # -----------------------------
+    with col_r1:
+        tempo_relacionamento = st.selectbox(
+            "Tempo de relacionamento com o fundo",
+            [
+                "Menos de 3 meses",
+                "Entre 3 e 12 meses",
+                "Entre 12 e 36 meses",
+                "Mais de 36 meses"
             ]
-
-            fig_wf = go.Figure(
-                go.Waterfall(
-                    name="Taxa",
-                    orientation="v",
-                    measure=["relative", "relative", "relative", "total"],
-                    x=["Custo Captação", "Custo Risco (PD·LGD)", "Spread FIDC", "Taxa Final"],
-                    y=valores_wf,
-                    text=[f"{v:.2f}%" for v in valores_wf],
-                    textposition="outside",
-                )
-            )
-            fig_wf.update_layout(
-                showlegend=False,
-                yaxis_title="% a.m.",
-                height=400,
-                margin=dict(l=20, r=20, t=40, b=20),
-            )
-            st.plotly_chart(fig_wf, use_container_width=True)
-
-        # Sensibilidade
-        with col_sens:
-            st.markdown("**Sensibilidade do Modelo (Score Z)**")
-
-            contrib = {
-                "Liquidez": COEFICIENTES["LIQUIDEZ_CORRENTE"] * liquidez_corrente,
-                "Endividamento": COEFICIENTES["ENDIVIDAMENTO_GERAL"] * endividamento_geral,
-                "Margem EBITDA": COEFICIENTES["MARGEM_EBITDA"] * margem_ebitda,
-                "Histórico (Tempo)": COEFICIENTES["TEMPO_RELACIONAMENTO"] * tempo_relacionamento,
-                "Inadimplência": COEFICIENTES["INADIMPLENCIA_RECENTE"] * (1 if inadimplencia_recente else 0),
-                "Concentração": COEFICIENTES["CONCENTRACAO_SACADO"] * concentracao_sacado,
-                "Fator Setorial": COEFICIENTES["FATOR_SETORIAL"] * fator_setorial,
-            }
-
-            df_sens = pd.DataFrame(
-                list(contrib.items()),
-                columns=["Variável", "Impacto_Z"]
-            )
-            df_sens["Abs"] = df_sens["Impacto_Z"].abs()
-            df_sens = df_sens.sort_values("Abs", ascending=True)
-
-            cores = ["#e74c3c" if v > 0 else "#27ae60" for v in df_sens["Impacto_Z"]]
-
-            fig_sens = go.Figure(
-                go.Bar(
-                    x=df_sens["Impacto_Z"],
-                    y=df_sens["Variável"],
-                    orientation="h",
-                    marker=dict(color=cores),
-                )
-            )
-            fig_sens.update_layout(
-                xaxis_title="Impacto no Score Z",
-                height=350,
-                margin=dict(l=20, r=20, t=40, b=20),
-            )
-            st.plotly_chart(fig_sens, use_container_width=True)
-
-        # -------------------------------------------------------------
-        # DETALHES DO MODELO – TABELA + CURVA PD x Z
-        # -------------------------------------------------------------
-        st.markdown("---")
-        st.subheader("🔍 Detalhes do Modelo")
-
-        contrib_full = {
-            "Intercepto": COEFICIENTES["INTERCEPT"],
-            "Liquidez Corrente": COEFICIENTES["LIQUIDEZ_CORRENTE"] * liquidez_corrente,
-            "Endividamento Geral": COEFICIENTES["ENDIVIDAMENTO_GERAL"] * endividamento_geral,
-            "Margem EBITDA": COEFICIENTES["MARGEM_EBITDA"] * margem_ebitda,
-            "Tempo de Relacionamento": COEFICIENTES["TEMPO_RELACIONAMENTO"] * tempo_relacionamento,
-            "Inadimplência Recente": COEFICIENTES["INADIMPLENCIA_RECENTE"] * (1 if inadimplencia_recente else 0),
-            "Concentração do Sacado": COEFICIENTES["CONCENTRACAO_SACADO"] * concentracao_sacado,
-            "Fator Setorial": COEFICIENTES["FATOR_SETORIAL"] * fator_setorial,
-        }
-
-        df_contrib = pd.DataFrame(
-            list(contrib_full.items()),
-            columns=["Variável", "Contribuição para o Score Z"]
-        )
-        df_contrib["Sinal"] = df_contrib["Contribuição para o Score Z"].apply(
-            lambda x: "Aumenta Risco" if x > 0 else "Diminui Risco"
-        )
-        df_contrib["Abs"] = df_contrib["Contribuição para o Score Z"].abs()
-
-        st.dataframe(
-            df_contrib.sort_values("Abs", ascending=False).drop(columns=["Abs"]),
-
-            hide_index=True,
-            use_container_width=True,
         )
 
-        st.metric(
-            "Score Z (Logit)",
-            f"{z_score:.4f}",
-            help="Score linear do modelo. Quanto maior o Z, maior a PD estimada."
+    with col_r2:
+        restricoes_recentes = st.selectbox(
+            "Restrições recentes (jurídicas / operacionais)",
+            [
+                "Nenhuma",
+                "Leve",
+                "Moderada",
+                "Grave"
+            ]
         )
 
-        st.markdown("##### Curva de Probabilidade de Default (PD) x Score Z")
+    # -----------------------------
+    # LÓGICA DE AJUSTE EM BPS
+    # -----------------------------
+    ajuste_relacionamento_bps = 0
+    ajuste_restricao_bps = 0
+    operacao_elegivel = True
 
-        z_range = np.linspace(-5, 5, 200)
-        pd_range = 1 / (1 + np.exp(-z_range))
+    # Relacionamento
+    if tempo_relacionamento == "Menos de 3 meses":
+        ajuste_relacionamento_bps = 20
+    elif tempo_relacionamento == "Entre 3 e 12 meses":
+        ajuste_relacionamento_bps = 0
+    elif tempo_relacionamento == "Entre 12 e 36 meses":
+        ajuste_relacionamento_bps = -10
+    elif tempo_relacionamento == "Mais de 36 meses":
+        ajuste_relacionamento_bps = -20
 
-        fig_pd = go.Figure()
-        fig_pd.add_trace(
-            go.Scatter(
-                x=z_range,
-                y=pd_range,
-                mode="lines",
-                name="PD(z)",
-            )
-        )
-        fig_pd.add_vline(
-            x=z_score,
-            line_width=2,
-            line_dash="dash",
-            line_color="red",
-            annotation_text=f"Score Z Atual: {z_score:.2f}",
-            annotation_position="top left",
-        )
-        fig_pd.add_hline(
-            y=pd_anual,
-            line_width=2,
-            line_dash="dash",
-            line_color="green",
-            annotation_text=f"PD Anual: {pd_anual*100:.2f}%",
-            annotation_position="bottom right",
-        )
-        fig_pd.update_layout(
-            title="Curva Logística – Score Z x PD Anual",
-            xaxis_title="Score Z (Logit)",
-            yaxis_title="PD Anual",
-            height=400,
-            margin=dict(l=20, r=20, t=40, b=20),
-        )
-        st.plotly_chart(fig_pd, use_container_width=True)
+    # Restrições
+    if restricoes_recentes == "Nenhuma":
+        ajuste_restricao_bps = 0
+    elif restricoes_recentes == "Leve":
+        ajuste_restricao_bps = 25
+    elif restricoes_recentes == "Moderada":
+        ajuste_restricao_bps = 50
+    elif restricoes_recentes == "Grave":
+        operacao_elegivel = False
 
-    # chama o dashboard
-    rating_dashboard()
+    # Ajuste total do bloco
+    ajuste_total_relacionamento_bps = ajuste_relacionamento_bps + ajuste_restricao_bps
+
+    st.markdown("")
+
+    k1, k2, k3 = st.columns(3)
+
+    k1.metric(
+        "Ajuste por Relacionamento",
+        f"{ajuste_relacionamento_bps:+.0f} bps",
+        help="Impacto do histórico do cedente com o fundo."
+    )
+
+    k2.metric(
+        "Ajuste por Restrições Recentes",
+        f"{ajuste_restricao_bps:+.0f} bps" if operacao_elegivel else "N/A",
+        help="Risco de momento: jurídico, operacional ou comportamental."
+    )
+
+    if operacao_elegivel:
+        k3.metric(
+            "Ajuste Total (Relacionamento)",
+            f"{ajuste_total_relacionamento_bps:+.0f} bps",
+            help="Soma dos ajustes de relacionamento e restrições."
+        )
+    else:
+        k3.metric(
+            "Status da Operação",
+            "NÃO ELEGÍVEL",
+            help="Restrições graves inviabilizam a operação."
+        )
+
+    # -------------------------------------------------
+    # CUSTO BASE DO FUNDO (WACC ECONÔMICO)
+    # -------------------------------------------------
+
+    # Taxas anuais efetivas por cota
+    taxa_senior_aa = cdi_aa + (spread_senior_aa_pct / 100)
+    taxa_mezz_aa   = cdi_aa + (spread_mezz_aa_pct / 100)
+    taxa_junior_aa = cdi_aa  # custo de oportunidade da Júnior
+
+    # PL total já existe
+    # pl_total = valor_junior + valor_mezz + valor_senior
+
+    if pl_total > 0:
+        custo_base_aa = (
+            valor_senior * taxa_senior_aa +
+            valor_mezz   * taxa_mezz_aa +
+            valor_junior * taxa_junior_aa
+        ) / pl_total
+    else:
+        custo_base_aa = 0.0
+
+    # Conversão para mensal
+    custo_base_am = (1 + custo_base_aa) ** (1/12) - 1
+
+    st.metric(
+        "Custo Base do Fundo",
+        f"{custo_base_am*100:.2f}% a.m.",
+        help=(
+            "Custo médio ponderado do capital total do fundo. "
+            "Inclui Sênior (CDI + spread), Mezzanino (CDI + spread) "
+            "e Júnior ao custo de oportunidade do CDI."
+        )
+    )
+
+    
+    # Conversão para percentual mensal
+    taxa_base_pct = custo_base_am * 100
+    spread_rating_pct = spread_atual * 100
+    spread_estrutura_pct = premio_estrutural_bps/100
+    spread_relacionamento_pct = ajuste_relacionamento_bps/100
+
+    taxa_total_pct = (
+        taxa_base_pct
+        + spread_rating_pct
+        + spread_estrutura_pct
+        + spread_relacionamento_pct
+    )
+
+    fig_waterfall = go.Figure(go.Waterfall(
+        name="Composição da Taxa",
+        orientation="v",
+        measure=[
+            "absolute",   # Taxa Base
+            "relative",   # Spread Rating
+            "relative",   # Spread Estrutura
+            "relative",   # Spread Relacionamento
+            "total"       # Taxa Total
+        ],
+        x=[
+            "Taxa Base",
+            "Spread de Rating",
+            "Spread da Estrutura da Operação",
+            "Spread de Relacionamento",
+            "Taxa Total da Operação"
+        ],
+        y=[
+            taxa_base_pct,
+            spread_rating_pct,
+            spread_estrutura_pct,
+            spread_relacionamento_pct,
+            taxa_total_pct
+        ],
+        text=[
+            f"{taxa_base_pct:.2f}%",
+            f"{spread_rating_pct:+.2f}%",
+            f"{spread_estrutura_pct:+.2f}%",
+            f"{spread_relacionamento_pct:+.2f}%",
+            f"{taxa_total_pct:.2f}%"
+        ],
+        textposition="outside",
+        connector={"line": {"color": "rgba(0,0,0,0.3)"}}
+    ))
+
+    fig_waterfall.update_layout(
+        title="Composição da Taxa da Operação (% a.m.)",
+        yaxis_title="Taxa (% a.m.)",
+        height=450,
+        margin=dict(l=20, r=20, t=50, b=20),
+        showlegend=False
+    )
+
+    st.plotly_chart(fig_waterfall, use_container_width=True)
+
+                
