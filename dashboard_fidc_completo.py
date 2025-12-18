@@ -2825,7 +2825,7 @@ with tab_dre:
 
 
 
-        
+
 # -------------------------------------------------------------
 # ESCALA DE RATING DE CRÉDITO
 # -------------------------------------------------------------
@@ -3928,60 +3928,88 @@ with tab_rating:
     
     # Conversão para percentual mensal
     taxa_base_pct = custo_base_am * 100
-    spread_rating_pct = spread_atual * 100
+    spread_rating_am = (1 + spread_atual) ** (1/12) - 1
+    spread_rating_pct = spread_rating_am * 100
     spread_estrutura_pct = premio_estrutural_bps/100
-    spread_relacionamento_pct = ajuste_relacionamento_bps/100
+    spread_relacionamento_pct = ajuste_total_relacionamento_bps/100
 
-    taxa_total_pct = (
-        taxa_base_pct
-        + spread_rating_pct
-        + spread_estrutura_pct
-        + spread_relacionamento_pct
-    )
+    # -------------------------------------------------
+# COMPOSIÇÃO FINAL DA TAXA — WATERFALL
+# -------------------------------------------------
 
-    fig_waterfall = go.Figure(go.Waterfall(
-        name="Composição da Taxa",
-        orientation="v",
-        measure=[
-            "absolute",   # Taxa Base
-            "relative",   # Spread Rating
-            "relative",   # Spread Estrutura
-            "relative",   # Spread Relacionamento
-            "total"       # Taxa Total
-        ],
-        x=[
-            "Taxa Base",
-            "Spread de Rating",
-            "Spread da Estrutura da Operação",
-            "Spread de Relacionamento",
-            "Taxa Total da Operação"
-        ],
-        y=[
-            taxa_base_pct,
-            spread_rating_pct,
-            spread_estrutura_pct,
-            spread_relacionamento_pct,
-            taxa_total_pct
-        ],
-        text=[
-            f"{taxa_base_pct:.2f}%",
-            f"{spread_rating_pct:+.2f}%",
-            f"{spread_estrutura_pct:+.2f}%",
-            f"{spread_relacionamento_pct:+.2f}%",
-            f"{taxa_total_pct:.2f}%"
-        ],
-        textposition="outside",
-        connector={"line": {"color": "rgba(0,0,0,0.3)"}}
-    ))
+# Taxa base (já em a.m.)
+taxa_base_pct = custo_base_am * 100
 
-    fig_waterfall.update_layout(
-        title="Composição da Taxa da Operação (% a.m.)",
-        yaxis_title="Taxa (% a.m.)",
-        height=450,
-        margin=dict(l=20, r=20, t=50, b=20),
-        showlegend=False
-    )
+# Spread de rating (converter de a.a. para a.m.)
+spread_rating_am = (1 + spread_atual) ** (1/12) - 1
+spread_rating_pct = spread_rating_am * 100
 
-    st.plotly_chart(fig_waterfall, use_container_width=True)
+# Spread estrutural (bps → % a.m.)
+spread_estrutura_pct = premio_estrutural_bps / 100
 
-                
+# Spread de relacionamento (bps → % a.m.)
+spread_relacionamento_pct = ajuste_total_relacionamento_bps / 100
+
+# Taxa total
+taxa_bruta_pct = (
+    taxa_base_pct
+    + spread_rating_pct
+    + spread_estrutura_pct
+    + spread_relacionamento_pct
+)
+
+
+pdd_am_pct = pdd_ponderada_view/12
+taxa_liquida_pct = taxa_bruta_pct - pdd_am_pct
+
+fig_waterfall = go.Figure(go.Waterfall(
+    orientation="v",
+    measure=[
+        "absolute",
+        "relative",
+        "relative",
+        "relative",
+        "total",
+        "relative",
+        "total"
+    ],
+    x=[
+        "Taxa Base",
+        "Spread de Rating",
+        "Spread da Estrutura",
+        "Spread de Relacionamento",
+        "Taxa Bruta da Operação",
+        "(-) PDD Esperado",
+        "Taxa Líquida da Operação"
+    ],
+    y=[
+        taxa_base_pct,
+        spread_rating_pct,
+        spread_estrutura_pct,
+        spread_relacionamento_pct,
+        taxa_bruta_pct,
+        -pdd_am_pct,
+        taxa_liquida_pct
+    ],
+    text=[
+        f"{taxa_base_pct:.2f}%",
+        f"{spread_rating_pct:+.2f}%",
+        f"{spread_estrutura_pct:+.2f}%",
+        f"{spread_relacionamento_pct:+.2f}%",
+        f"{taxa_bruta_pct:.2f}%",
+        f"-{pdd_am_pct:.2f}%",
+        f"{taxa_liquida_pct:.2f}%"
+    ],
+    textposition="outside",
+    connector={"line": {"color": "rgba(0,0,0,0.3)"}}
+))
+
+fig_waterfall.update_layout(
+    title="Composição da Taxa da Operação — Líquida de PDD (% a.m.)",
+    yaxis_title="Taxa (% a.m.)",
+    height=550,
+    showlegend=False
+)
+
+st.plotly_chart(fig_waterfall, use_container_width=True)
+
