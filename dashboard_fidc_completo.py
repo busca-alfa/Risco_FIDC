@@ -2796,6 +2796,36 @@ with tab_dre:
     else:
         st.info("Gere uma simulação com receita positiva para visualizar o fluxo financeiro.")
         
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
 # -------------------------------------------------------------
 # ESCALA DE RATING DE CRÉDITO
 # -------------------------------------------------------------
