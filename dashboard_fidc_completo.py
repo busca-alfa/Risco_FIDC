@@ -2864,527 +2864,8 @@ SPREAD_POR_RATING = {
         "C": 0.3,
     }
 
-with tab_rating:
 
-    st.markdown("## 📈 Análise Histórica – Dados Financeiros")
-    st.caption("Insira os valores históricos (R$). As variações percentuais são calculadas automaticamente.")
-
-    indicadores = [
-        "Faturamento",
-        "EBITDA",
-        "Resultado",
-        "Caixa",
-        "Dívida",
-        "Imobilizado",
-        "PL",
-    ]
-
-    # =========================
-    # 1. INPUT – TABELA EDITÁVEL
-    # =========================
-    if "hist_input" not in st.session_state:
-        st.session_state["hist_input"] = pd.DataFrame(
-            {
-                "P-3": [
-                    80_000_000,   # Faturamento
-                    12_000_000,   # EBITDA
-                    6_000_000,    # Resultado
-                    5_000_000,    # Caixa
-                    15_000_000,   # Dívida
-                    20_000_000,   # Imobilizado
-                    25_000_000,   # PL
-                ],
-                "P-2": [
-                    90_000_000,
-                    14_000_000,
-                    7_000_000,
-                    6_000_000,
-                    16_000_000,
-                    22_000_000,
-                    27_000_000,
-                ],
-                "P-1": [
-                    100_000_000,
-                    16_000_000,
-                    8_000_000,
-                    7_000_000,
-                    18_000_000,
-                    24_000_000,
-                    30_000_000,
-                ],
-                "Atual": [
-                    115_000_000,
-                    19_000_000,
-                    10_000_000,
-                    9_000_000,
-                    20_000_000,
-                    26_000_000,
-                    34_000_000,
-                ],
-            },
-            index=[
-                "Faturamento",
-                "EBITDA",
-                "Resultado",
-                "Caixa",
-                "Dívida",
-                "Imobilizado",
-                "PL",
-            ]
-        )
-
-
-    df_input = st.data_editor(
-        st.session_state["hist_input"],
-        use_container_width=True,
-        num_rows="fixed",
-        height=300,
-        key="hist_input_editor",
-    )
-
-    # =========================
-    # 2. CÁLCULO DAS VARIAÇÕES
-    # =========================
-    def delta(a, b):
-        if a > 0 and b > 0:
-            return (b / a - 1)
-        return np.nan
-
-    df_delta = pd.DataFrame(index=indicadores)
-    df_delta["Δ P-3 → P-2"] = [delta(df_input.loc[i, "P-3"], df_input.loc[i, "P-2"]) for i in indicadores]
-    df_delta["Δ P-2 → P-1"] = [delta(df_input.loc[i, "P-2"], df_input.loc[i, "P-1"]) for i in indicadores]
-    df_delta["Δ P-1 → Atual"] = [delta(df_input.loc[i, "P-1"], df_input.loc[i, "Atual"]) for i in indicadores]
-
-    # =========================
-    # 3. VISUAL – LADO A LADO
-    # =========================
-    c1, c2 = st.columns([3, 2])
-
-    with c1:
-        st.markdown("### 📥 Valores Históricos")
-        st.dataframe(
-            df_input.style.format("R$ {:,.0f}"),
-            use_container_width=True,
-        )
-
-    with c2:
-        st.markdown("### 📊 Variações Percentuais")
-        st.dataframe(
-            df_delta.style
-                .format("{:+.1%}")
-                .applymap(
-                    lambda v: "color: green;" if v > 0 else "color: red;",
-                ),
-            use_container_width=True,
-        )
-
-    # =========================
-    # 4. CAGR – RESUMO VISUAL
-    # =========================
-    def cagr(v0, v1, anos=3):
-        if v0 > 0 and v1 > 0:
-            return (v1 / v0) ** (1 / anos) - 1
-        return None
-
-    st.markdown("### 📈 Crescimento Estrutural (CAGR)")
-
-    cols = st.columns(len(indicadores))
-
-    for col, ind in zip(cols, indicadores):
-        v_ini = df_input.loc[ind, "P-3"]
-        v_fim = df_input.loc[ind, "Atual"]
-        valor = cagr(v_ini, v_fim)
-
-        with col:
-            st.markdown(
-                f"""
-                <div style="
-                    padding:6px;
-                    border-radius:6px;
-                    background:#f7f9fc;
-                    border:1px solid #e0e0e0;
-                    text-align:center;
-                    font-size:11px;
-                ">
-                    <strong>{ind}</strong><br>
-                    <span style="font-size:13px; color:{'#1a7f37' if valor and valor > 0 else '#c62828'}">
-                        {f"{valor*100:+.1f}%" if valor is not None else "n/a"}
-                    </span><br>
-                    <span style="font-size:10px; color:#666;">CAGR 3 anos</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-        # =========================
-    # 5. INDICADORES ESTRUTURAIS – ÚLTIMO PERÍODO
-    # =========================
-    st.markdown("### 🧩 Estrutura Financeira – Último Período")
-
-    def safe_div(a, b):
-        if b > 0:
-            return a / b
-        return None
-
-    indicadores_base = {
-        "Margem EBITDA": safe_div(
-            df_input.loc["EBITDA", "Atual"],
-            df_input.loc["Faturamento", "Atual"],
-        ),
-        "Caixa / EBITDA": safe_div(
-            df_input.loc["Caixa", "Atual"],
-            df_input.loc["EBITDA", "Atual"],
-        ),
-        "Dívida / EBITDA": safe_div(
-            df_input.loc["Dívida", "Atual"],
-            df_input.loc["EBITDA", "Atual"],
-        ),
-        "Dívida / PL": safe_div(
-            df_input.loc["Dívida", "Atual"],
-            df_input.loc["PL", "Atual"],
-        ),
-        "Caixa / Dívida": safe_div(
-            df_input.loc["Caixa", "Atual"],
-            df_input.loc["Dívida", "Atual"],
-        ),
-        # extras que ajudam MUITO em crédito
-        "EBITDA / PL": safe_div(
-            df_input.loc["EBITDA", "Atual"],
-            df_input.loc["PL", "Atual"],
-        ),
-        "Resultado / Receita": safe_div(
-            df_input.loc["Resultado", "Atual"],
-            df_input.loc["Faturamento", "Atual"],
-        ),
-    }
-
-    cols = st.columns(len(indicadores_base))
-
-    for col, (nome, valor) in zip(cols, indicadores_base.items()):
-        with col:
-            st.markdown(
-                f"""
-                <div style="
-                    padding:6px;
-                    border-radius:6px;
-                    background:#ffffff;
-                    border:1px solid #e0e0e0;
-                    text-align:center;
-                    font-size:11px;
-                ">
-                    <strong>{nome}</strong><br>
-                    <span style="font-size:13px; color:#0d47a1;">
-                        {f"{valor:.2f}" if valor is not None else "n/a"}
-                    </span><br>
-                    <span style="font-size:10px; color:#777;">Último período</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-        # =========================
-    # 6. SCORES POR INDICADOR
-    # =========================
-    def score_faixa(valor, faixas):
-        """
-        faixas = [(limite_min, score), ...] ordenado desc
-        """
-        if valor is None or np.isnan(valor):
-            return 0
-        for limite, score in faixas:
-            if valor >= limite:
-                return score
-        return faixas[-1][1]
-
-    scores = {}
-
-    # Crescimento
-    scores["CAGR Receita"] = score_faixa(
-        cagr(
-            df_input.loc["Faturamento", "P-3"],
-            df_input.loc["Faturamento", "Atual"]
-        ),
-        [(0.15,100),(0.08,80),(0.03,60),(0.0,40),(-1,10)]
-    )
-
-    scores["CAGR EBITDA"] = score_faixa(
-        cagr(
-            df_input.loc["EBITDA", "P-3"],
-            df_input.loc["EBITDA", "Atual"]
-        ),
-        [(0.15,100),(0.08,80),(0.03,60),(0.0,40),(-1,10)]
-    )
-
-    # Rentabilidade
-    scores["Margem EBITDA"] = score_faixa(
-        indicadores_base["Margem EBITDA"],
-        [(0.20,100),(0.10,70),(0.05,40),(-1,10)]
-    )
-
-    # Caixa
-    scores["Caixa / EBITDA"] = score_faixa(
-        indicadores_base["Caixa / EBITDA"],
-        [(1.0,100),(0.5,70),(0.0,40),(-1,10)]
-    )
-
-    # Alavancagem
-    scores["Dívida / EBITDA"] = score_faixa(
-        -indicadores_base["Dívida / EBITDA"] if indicadores_base["Dívida / EBITDA"] else None,
-        [(-1.5,100),(-3.0,70),(-5.0,40),(-99,10)]
-    )
-
-    st.markdown("### 🎯 Scores de Crédito – Indicadores")
-
-    with st.expander("📘 Metodologia de Avaliação dos Indicadores", expanded=False):
-        st.markdown("""
-    ### Objetivo do Bloco
-    Este bloco avalia a **qualidade econômico-financeira do sacado** a partir de indicadores
-    extraídos dos demonstrativos históricos, com foco em **capacidade de geração de caixa,
-    alavancagem e liquidez**.
-
-    ### Lógica Geral
-    Os indicadores são analisados individualmente e depois consolidados em um **score sintético**,
-    que alimenta o rating final de crédito.
-
-    A lógica segue três pilares:
-
-    1. **Geração de Caixa**
-    - EBITDA / Faturamento  
-    - EBITDA absoluto e crescimento (CAGR)
-
-    2. **Liquidez e Sustentabilidade**
-    - Caixa / EBITDA  
-    - Caixa / Dívida  
-
-    3. **Alavancagem**
-    - Dívida / EBITDA  
-    - Dívida / PL  
-
-    ### Interpretação
-    - Quanto **maior a geração de caixa** e **menor a alavancagem**, melhor o score.
-    - Indicadores fora de faixas prudenciais geram **penalização progressiva**.
-    - O modelo evita decisões binárias: trabalha com **gradiente de risco**.
-
-    ### Observação Importante
-    Este score **não decide sozinho** o crédito.
-    Ele compõe o rating final junto com:
-    - Histórico de pagamentos
-    - Concentração
-    - Estrutura da operação
-    - Subordinação do FIDC
-    """)
-
-
-    cols = st.columns(len(scores))
-
-    for col, (nome, score) in zip(cols, scores.items()):
-        with col:
-            st.markdown(
-                f"""
-                <div style="
-                    padding:6px;
-                    border-radius:6px;
-                    background:#f9f9f9;
-                    border:1px solid #ddd;
-                    text-align:center;
-                    font-size:11px;
-                ">
-                    <strong>{nome}</strong><br>
-                    <span style="font-size:14px; color:#0d47a1;">
-                        {score}
-                    </span><br>
-                    <span style="font-size:10px; color:#666;">Score (0–100)</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-    # =========================
-    # BASE ÚNICA DE DADOS
-    # =========================
-    df = df_input
-
-    receita = df.loc["Faturamento", "Atual"]
-    ebitda = df.loc["EBITDA", "Atual"]
-    caixa = df.loc["Caixa", "Atual"]
-    divida = df.loc["Dívida", "Atual"]
-    pl = df.loc["PL", "Atual"]
-
-    # =========================
-    # INDICADORES – ÚLTIMO PERÍODO
-    # =========================
-    ebitda_margin = ebitda / receita if receita > 0 else np.nan
-    divida_ebitda = divida / ebitda if ebitda > 0 else np.nan
-    caixa_ebitda = caixa / ebitda if ebitda > 0 else np.nan
-    divida_pl = divida / pl if pl > 0 else np.nan
-    caixa_divida = caixa / divida if divida > 0 else np.nan
-
-    # CAGR Receita
-    cagr_receita = cagr(
-        df.loc["Faturamento", "P-3"],
-        df.loc["Faturamento", "Atual"]
-    )
-
-    # =========================
-    # FUNÇÃO DE SCORE NORMALIZADO
-    # =========================
-    def score_interval(valor, bom, medio, inverso=False):
-        if valor is None or np.isnan(valor):
-            return 0.0
-        if inverso:
-            if valor <= bom:
-                return 1.0
-            elif valor <= medio:
-                return 0.5
-            else:
-                return 0.0
-        else:
-            if valor >= bom:
-                return 1.0
-            elif valor >= medio:
-                return 0.5
-            else:
-                return 0.0
-
-    # =========================
-    # SCORES INDIVIDUAIS
-    # =========================
-    score_ebitda_margin = score_interval(ebitda_margin, 0.20, 0.10)
-    score_divida_ebitda = score_interval(divida_ebitda, 2.0, 4.0, inverso=True)
-    score_caixa_divida = score_interval(caixa_divida, 0.30, 0.10)
-    score_divida_pl = score_interval(divida_pl, 0.80, 1.50, inverso=True)
-    score_cagr = score_interval(cagr_receita, 0.10, 0.03)
-
-    # =========================
-    # SCORE FINANCEIRO BALANCEADO
-    # =========================
-    score_financeiro = (
-        0.25 * score_ebitda_margin +
-        0.25 * score_divida_ebitda +
-        0.20 * score_caixa_divida +
-        0.15 * score_divida_pl +
-        0.15 * score_cagr
-    )
-
-    # =========================
-    # MAPA DE RATING
-    # =========================
-    def map_rating(score):
-        for code, limite, _ in RATING_CUTS:
-            if score >= limite:
-                return code
-        return "CCC"
-
-    rating_final = map_rating(score_financeiro)
-
-    # =========================
-    # OUTPUT FINAL
-    # =========================
-    st.markdown("## 🏁 Resultado do Rating Financeiro")
-
-    with st.expander("📘 Metodologia do Rating Financeiro", expanded=False):
-        st.markdown("""
-    ### Objetivo do Rating
-    Este rating busca medir a **capacidade econômico-financeira do sacado** em honrar
-    suas obrigações no curto e médio prazo, com foco em **geração de caixa, liquidez,
-    alavancagem e crescimento**.
-
-    O modelo é **quantitativo, balanceado e explicável**, evitando decisões binárias.
-
-    ---
-
-    ### Estrutura de Pesos do Rating
-
-    | Pilar                  | Indicador                         | Peso |
-    |------------------------|-----------------------------------|------|
-    | **Rentabilidade**      | EBITDA / Receita                  | 25%  |
-    | **Alavancagem**        | Dívida / EBITDA                   | 25%  |
-    | **Liquidez**           | Caixa / Dívida                    | 20%  |
-    | **Estrutura de Capital** | Dívida / PL                     | 15%  |
-    | **Crescimento**        | CAGR do Faturamento (3 anos)      | 15%  |
-
-    ---
-
-    ### Metodologia de Pontuação
-    Cada indicador recebe um **score normalizado entre 0 e 1**, conforme faixas
-    prudenciais típicas de análise de crédito:
-
-    - **1.0** → Faixa saudável  
-    - **0.5** → Zona intermediária  
-    - **0.0** → Faixa de risco elevado  
-
-    Indicadores de risco (ex: Dívida / EBITDA) são avaliados de forma **inversa**
-    — quanto menor, melhor.
-
-    ---
-
-    ### Cálculo do Score Final
-    O score financeiro é a **média ponderada** dos scores individuais:
-
-    > Score Final = Σ (Score do Indicador × Peso)
-
-    Este score é então mapeado para um **rating alfabético**, de AAA a C.
-
-    ---
-
-    ### Observações Importantes
-    - O modelo **não incorpora fatores qualitativos** nesta etapa.
-    - Não há julgamento subjetivo ou override automático.
-    - O rating reflete exclusivamente a **condição financeira histórica**.
-    """)
-
-
-    c1, c2 = st.columns(2)
-
-    c1.metric(
-        "Score Financeiro (0–1)",
-        f"{score_financeiro:.2f}",
-        help="Score agregado com pesos balanceados entre rentabilidade, liquidez, alavancagem e crescimento."
-    )
-
-    c2.metric(
-        "Rating de Crédito",
-        rating_final,
-        help="Rating financeiro sintético, sem fatores qualitativos ou estruturais."
-    )
-
-    with st.expander("📊 Escala de Rating e Níveis de Risco", expanded=False):
-        st.markdown("""
-    ### Objetivo da Escala
-    Esta escala traduz o **score financeiro quantitativo** em uma **classificação de risco de crédito**
-    utilizada como referência para decisões em FIDCs.
-
-    ---
-
-    ### Escala de Rating Financeiro Base
-
-    | Rating | Faixa de Score | Nível de Risco | Interpretação |
-    |------|---------------|---------------|--------------|
-    | **AAA** | ≥ 0,90 | **Mínimo** | Estrutura financeira excepcional, alta previsibilidade de caixa |
-    | **AA** | 0,80 – 0,89 | **Muito Baixo** | Empresa muito sólida, baixa probabilidade de estresse |
-    | **A** | 0,70 – 0,79 | **Baixo** | Boa capacidade de pagamento e geração de caixa |
-    | **BBB** | 0,60 – 0,69 | **Moderado** | Estrutura adequada, sensível a ciclos |
-    | **BB** | 0,50 – 0,59 | **Moderado / Elevado** | Risco crescente, exige mitigadores |
-    | **B** | 0,40 – 0,49 | **Elevado** | Fragilidade financeira |
-    | **C** | < 0,40 | **Muito Elevado** | Alto risco de inadimplência |
-
-    ---
-
-    ### Importante
-    Este rating representa o **rating financeiro base do sacado**.
-    O rating final da operação pode diferir em função de:
-    - setor de atuação
-    - histórico de pagamentos
-    - concentração
-    - estrutura do FIDC
-    """)
-
-    # -------------------------------------------------------------
-    # OVERRIDE DE RATING (JULGAMENTO)
-    # -------------------------------------------------------------
-    st.markdown("---")
-    st.header("🧭 Ajuste de Julgamento (Override de Rating)")
-    rating_ordem = [
+rating_ordem = [
             "AAA", "AA+", "AA", "AA-",
             "A+", "A", "A-",
             "BBB+", "BBB", "BBB-",
@@ -3394,622 +2875,1155 @@ with tab_rating:
             ]
     
 
-    rating_cod_original = rating_final
-    def aplica_override_rating(rating_cod_original, ajuste_notch, rating_ordem):
-        """
-        Aplica override manual (múltiplos notches) ao rating original.
+with tab_rating:
 
-        Retorna:
-            rating_cod_final (str)
-            houve_override (bool)
-        """
-
-        idx_original = rating_ordem.index(rating_cod_original)
-        idx_final = idx_original - ajuste_notch
-
-        # Garante que o índice fique dentro dos limites
-        idx_final = max(0, min(idx_final, len(rating_ordem) - 1))
-
-        rating_cod_final = rating_ordem[idx_final]
-        houve_override = ajuste_notch != 0
-
-        return rating_cod_final, houve_override
+    subtab_cadastro, subtab_analise, subtab_taxa = st.tabs([ 
+        "📝 Cadastramento da Operação", 
+        "📊 Análise Econômico-Financeira", 
+        "💰 Composição da Taxa" 
+        ])
 
 
+    
+    with subtab_analise:
 
-    col_o1, col_o2 = st.columns([1, 2])
+        st.markdown("## 📈 Análise Histórica – Dados Financeiros")
+        st.caption("Insira os valores históricos (R$). As variações percentuais são calculadas automaticamente.")
 
-    with col_o1:
-        ajuste_notch = st.slider(
-            "Ajuste de julgamento (notches)",
-            min_value=-5,
-            max_value=5,
-            value=0,
-            step=1,
+        indicadores = [
+            "Faturamento",
+            "EBITDA",
+            "Resultado",
+            "Caixa",
+            "Dívida",
+            "Imobilizado",
+            "PL",
+        ]
+
+        # =========================
+        # 1. INPUT – TABELA EDITÁVEL
+        # =========================
+        if "hist_input" not in st.session_state:
+            st.session_state["hist_input"] = pd.DataFrame(
+                {
+                    "P-3": [
+                        80_000_000,   # Faturamento
+                        12_000_000,   # EBITDA
+                        6_000_000,    # Resultado
+                        5_000_000,    # Caixa
+                        15_000_000,   # Dívida
+                        20_000_000,   # Imobilizado
+                        25_000_000,   # PL
+                    ],
+                    "P-2": [
+                        90_000_000,
+                        14_000_000,
+                        7_000_000,
+                        6_000_000,
+                        16_000_000,
+                        22_000_000,
+                        27_000_000,
+                    ],
+                    "P-1": [
+                        100_000_000,
+                        16_000_000,
+                        8_000_000,
+                        7_000_000,
+                        18_000_000,
+                        24_000_000,
+                        30_000_000,
+                    ],
+                    "Atual": [
+                        115_000_000,
+                        19_000_000,
+                        10_000_000,
+                        9_000_000,
+                        20_000_000,
+                        26_000_000,
+                        34_000_000,
+                    ],
+                },
+                index=[
+                    "Faturamento",
+                    "EBITDA",
+                    "Resultado",
+                    "Caixa",
+                    "Dívida",
+                    "Imobilizado",
+                    "PL",
+                ]
+            )
+
+
+        df_input = st.data_editor(
+            st.session_state["hist_input"],
+            use_container_width=True,
+            num_rows="fixed",
+            height=300,
+            key="hist_input_editor",
+        )
+
+        # =========================
+        # 2. CÁLCULO DAS VARIAÇÕES
+        # =========================
+        def delta(a, b):
+            if a > 0 and b > 0:
+                return (b / a - 1)
+            return np.nan
+
+        df_delta = pd.DataFrame(index=indicadores)
+        df_delta["Δ P-3 → P-2"] = [delta(df_input.loc[i, "P-3"], df_input.loc[i, "P-2"]) for i in indicadores]
+        df_delta["Δ P-2 → P-1"] = [delta(df_input.loc[i, "P-2"], df_input.loc[i, "P-1"]) for i in indicadores]
+        df_delta["Δ P-1 → Atual"] = [delta(df_input.loc[i, "P-1"], df_input.loc[i, "Atual"]) for i in indicadores]
+
+        # =========================
+        # 3. VISUAL – LADO A LADO
+        # =========================
+        c1, c2 = st.columns([3, 2])
+
+        with c1:
+            st.markdown("### 📥 Valores Históricos")
+            st.dataframe(
+                df_input.style.format("R$ {:,.0f}"),
+                use_container_width=True,
+            )
+
+        with c2:
+            st.markdown("### 📊 Variações Percentuais")
+            st.dataframe(
+                df_delta.style
+                    .format("{:+.1%}")
+                    .applymap(
+                        lambda v: "color: green;" if v > 0 else "color: red;",
+                    ),
+                use_container_width=True,
+            )
+
+        # =========================
+        # 4. CAGR – RESUMO VISUAL
+        # =========================
+        def cagr(v0, v1, anos=3):
+            if v0 > 0 and v1 > 0:
+                return (v1 / v0) ** (1 / anos) - 1
+            return None
+
+        st.markdown("### 📈 Crescimento Estrutural (CAGR)")
+
+        cols = st.columns(len(indicadores))
+
+        for col, ind in zip(cols, indicadores):
+            v_ini = df_input.loc[ind, "P-3"]
+            v_fim = df_input.loc[ind, "Atual"]
+            valor = cagr(v_ini, v_fim)
+
+            with col:
+                st.markdown(
+                    f"""
+                    <div style="
+                        padding:6px;
+                        border-radius:6px;
+                        background:#f7f9fc;
+                        border:1px solid #e0e0e0;
+                        text-align:center;
+                        font-size:11px;
+                    ">
+                        <strong>{ind}</strong><br>
+                        <span style="font-size:13px; color:{'#1a7f37' if valor and valor > 0 else '#c62828'}">
+                            {f"{valor*100:+.1f}%" if valor is not None else "n/a"}
+                        </span><br>
+                        <span style="font-size:10px; color:#666;">CAGR 3 anos</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            # =========================
+        # 5. INDICADORES ESTRUTURAIS – ÚLTIMO PERÍODO
+        # =========================
+        st.markdown("### 🧩 Estrutura Financeira – Último Período")
+
+        def safe_div(a, b):
+            if b > 0:
+                return a / b
+            return None
+
+        indicadores_base = {
+            "Margem EBITDA": safe_div(
+                df_input.loc["EBITDA", "Atual"],
+                df_input.loc["Faturamento", "Atual"],
+            ),
+            "Caixa / EBITDA": safe_div(
+                df_input.loc["Caixa", "Atual"],
+                df_input.loc["EBITDA", "Atual"],
+            ),
+            "Dívida / EBITDA": safe_div(
+                df_input.loc["Dívida", "Atual"],
+                df_input.loc["EBITDA", "Atual"],
+            ),
+            "Dívida / PL": safe_div(
+                df_input.loc["Dívida", "Atual"],
+                df_input.loc["PL", "Atual"],
+            ),
+            "Caixa / Dívida": safe_div(
+                df_input.loc["Caixa", "Atual"],
+                df_input.loc["Dívida", "Atual"],
+            ),
+            # extras que ajudam MUITO em crédito
+            "EBITDA / PL": safe_div(
+                df_input.loc["EBITDA", "Atual"],
+                df_input.loc["PL", "Atual"],
+            ),
+            "Resultado / Receita": safe_div(
+                df_input.loc["Resultado", "Atual"],
+                df_input.loc["Faturamento", "Atual"],
+            ),
+        }
+
+        cols = st.columns(len(indicadores_base))
+
+        for col, (nome, valor) in zip(cols, indicadores_base.items()):
+            with col:
+                st.markdown(
+                    f"""
+                    <div style="
+                        padding:6px;
+                        border-radius:6px;
+                        background:#ffffff;
+                        border:1px solid #e0e0e0;
+                        text-align:center;
+                        font-size:11px;
+                    ">
+                        <strong>{nome}</strong><br>
+                        <span style="font-size:13px; color:#0d47a1;">
+                            {f"{valor:.2f}" if valor is not None else "n/a"}
+                        </span><br>
+                        <span style="font-size:10px; color:#777;">Último período</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            # =========================
+        # 6. SCORES POR INDICADOR
+        # =========================
+        def score_faixa(valor, faixas):
+            """
+            faixas = [(limite_min, score), ...] ordenado desc
+            """
+            if valor is None or np.isnan(valor):
+                return 0
+            for limite, score in faixas:
+                if valor >= limite:
+                    return score
+            return faixas[-1][1]
+
+        scores = {}
+
+        # Crescimento
+        scores["CAGR Receita"] = score_faixa(
+            cagr(
+                df_input.loc["Faturamento", "P-3"],
+                df_input.loc["Faturamento", "Atual"]
+            ),
+            [(0.15,100),(0.08,80),(0.03,60),(0.0,40),(-1,10)]
+        )
+
+        scores["CAGR EBITDA"] = score_faixa(
+            cagr(
+                df_input.loc["EBITDA", "P-3"],
+                df_input.loc["EBITDA", "Atual"]
+            ),
+            [(0.15,100),(0.08,80),(0.03,60),(0.0,40),(-1,10)]
+        )
+
+        # Rentabilidade
+        scores["Margem EBITDA"] = score_faixa(
+            indicadores_base["Margem EBITDA"],
+            [(0.20,100),(0.10,70),(0.05,40),(-1,10)]
+        )
+
+        # Caixa
+        scores["Caixa / EBITDA"] = score_faixa(
+            indicadores_base["Caixa / EBITDA"],
+            [(1.0,100),(0.5,70),(0.0,40),(-1,10)]
+        )
+
+        # Alavancagem
+        scores["Dívida / EBITDA"] = score_faixa(
+            -indicadores_base["Dívida / EBITDA"] if indicadores_base["Dívida / EBITDA"] else None,
+            [(-1.5,100),(-3.0,70),(-5.0,40),(-99,10)]
+        )
+
+        st.markdown("### 🎯 Scores de Crédito – Indicadores")
+
+        with st.expander("📘 Metodologia de Avaliação dos Indicadores", expanded=False):
+            st.markdown("""
+        ### Objetivo do Bloco
+        Este bloco avalia a **qualidade econômico-financeira do sacado** a partir de indicadores
+        extraídos dos demonstrativos históricos, com foco em **capacidade de geração de caixa,
+        alavancagem e liquidez**.
+
+        ### Lógica Geral
+        Os indicadores são analisados individualmente e depois consolidados em um **score sintético**,
+        que alimenta o rating final de crédito.
+
+        A lógica segue três pilares:
+
+        1. **Geração de Caixa**
+        - EBITDA / Faturamento  
+        - EBITDA absoluto e crescimento (CAGR)
+
+        2. **Liquidez e Sustentabilidade**
+        - Caixa / EBITDA  
+        - Caixa / Dívida  
+
+        3. **Alavancagem**
+        - Dívida / EBITDA  
+        - Dívida / PL  
+
+        ### Interpretação
+        - Quanto **maior a geração de caixa** e **menor a alavancagem**, melhor o score.
+        - Indicadores fora de faixas prudenciais geram **penalização progressiva**.
+        - O modelo evita decisões binárias: trabalha com **gradiente de risco**.
+
+        ### Observação Importante
+        Este score **não decide sozinho** o crédito.
+        Ele compõe o rating final junto com:
+        - Histórico de pagamentos
+        - Concentração
+        - Estrutura da operação
+        - Subordinação do FIDC
+        """)
+
+
+        cols = st.columns(len(scores))
+
+        for col, (nome, score) in zip(cols, scores.items()):
+            with col:
+                st.markdown(
+                    f"""
+                    <div style="
+                        padding:6px;
+                        border-radius:6px;
+                        background:#f9f9f9;
+                        border:1px solid #ddd;
+                        text-align:center;
+                        font-size:11px;
+                    ">
+                        <strong>{nome}</strong><br>
+                        <span style="font-size:14px; color:#0d47a1;">
+                            {score}
+                        </span><br>
+                        <span style="font-size:10px; color:#666;">Score (0–100)</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+        # =========================
+        # BASE ÚNICA DE DADOS
+        # =========================
+        df = df_input
+
+        receita = df.loc["Faturamento", "Atual"]
+        ebitda = df.loc["EBITDA", "Atual"]
+        caixa = df.loc["Caixa", "Atual"]
+        divida = df.loc["Dívida", "Atual"]
+        pl = df.loc["PL", "Atual"]
+
+        # =========================
+        # INDICADORES – ÚLTIMO PERÍODO
+        # =========================
+        ebitda_margin = ebitda / receita if receita > 0 else np.nan
+        divida_ebitda = divida / ebitda if ebitda > 0 else np.nan
+        caixa_ebitda = caixa / ebitda if ebitda > 0 else np.nan
+        divida_pl = divida / pl if pl > 0 else np.nan
+        caixa_divida = caixa / divida if divida > 0 else np.nan
+
+        # CAGR Receita
+        cagr_receita = cagr(
+            df.loc["Faturamento", "P-3"],
+            df.loc["Faturamento", "Atual"]
+        )
+
+        # =========================
+        # FUNÇÃO DE SCORE NORMALIZADO
+        # =========================
+        def score_interval(valor, bom, medio, inverso=False):
+            if valor is None or np.isnan(valor):
+                return 0.0
+            if inverso:
+                if valor <= bom:
+                    return 1.0
+                elif valor <= medio:
+                    return 0.5
+                else:
+                    return 0.0
+            else:
+                if valor >= bom:
+                    return 1.0
+                elif valor >= medio:
+                    return 0.5
+                else:
+                    return 0.0
+
+        # =========================
+        # SCORES INDIVIDUAIS
+        # =========================
+        score_ebitda_margin = score_interval(ebitda_margin, 0.20, 0.10)
+        score_divida_ebitda = score_interval(divida_ebitda, 2.0, 4.0, inverso=True)
+        score_caixa_divida = score_interval(caixa_divida, 0.30, 0.10)
+        score_divida_pl = score_interval(divida_pl, 0.80, 1.50, inverso=True)
+        score_cagr = score_interval(cagr_receita, 0.10, 0.03)
+
+        # =========================
+        # SCORE FINANCEIRO BALANCEADO
+        # =========================
+        score_financeiro = (
+            0.25 * score_ebitda_margin +
+            0.25 * score_divida_ebitda +
+            0.20 * score_caixa_divida +
+            0.15 * score_divida_pl +
+            0.15 * score_cagr
+        )
+
+        # =========================
+        # MAPA DE RATING
+        # =========================
+        def map_rating(score):
+            for code, limite, _ in RATING_CUTS:
+                if score >= limite:
+                    return code
+            return "CCC"
+
+        rating_final = map_rating(score_financeiro)
+
+        # =========================
+        # OUTPUT FINAL
+        # =========================
+        st.markdown("## 🏁 Resultado do Rating Financeiro")
+
+        with st.expander("📘 Metodologia do Rating Financeiro", expanded=False):
+            st.markdown("""
+        ### Objetivo do Rating
+        Este rating busca medir a **capacidade econômico-financeira do sacado** em honrar
+        suas obrigações no curto e médio prazo, com foco em **geração de caixa, liquidez,
+        alavancagem e crescimento**.
+
+        O modelo é **quantitativo, balanceado e explicável**, evitando decisões binárias.
+
+        ---
+
+        ### Estrutura de Pesos do Rating
+
+        | Pilar                  | Indicador                         | Peso |
+        |------------------------|-----------------------------------|------|
+        | **Rentabilidade**      | EBITDA / Receita                  | 25%  |
+        | **Alavancagem**        | Dívida / EBITDA                   | 25%  |
+        | **Liquidez**           | Caixa / Dívida                    | 20%  |
+        | **Estrutura de Capital** | Dívida / PL                     | 15%  |
+        | **Crescimento**        | CAGR do Faturamento (3 anos)      | 15%  |
+
+        ---
+
+        ### Metodologia de Pontuação
+        Cada indicador recebe um **score normalizado entre 0 e 1**, conforme faixas
+        prudenciais típicas de análise de crédito:
+
+        - **1.0** → Faixa saudável  
+        - **0.5** → Zona intermediária  
+        - **0.0** → Faixa de risco elevado  
+
+        Indicadores de risco (ex: Dívida / EBITDA) são avaliados de forma **inversa**
+        — quanto menor, melhor.
+
+        ---
+
+        ### Cálculo do Score Final
+        O score financeiro é a **média ponderada** dos scores individuais:
+
+        > Score Final = Σ (Score do Indicador × Peso)
+
+        Este score é então mapeado para um **rating alfabético**, de AAA a C.
+
+        ---
+
+        ### Observações Importantes
+        - O modelo **não incorpora fatores qualitativos** nesta etapa.
+        - Não há julgamento subjetivo ou override automático.
+        - O rating reflete exclusivamente a **condição financeira histórica**.
+        """)
+
+
+        c1, c2 = st.columns(2)
+
+        c1.metric(
+            "Score Financeiro (0–1)",
+            f"{score_financeiro:.2f}",
+            help="Score agregado com pesos balanceados entre rentabilidade, liquidez, alavancagem e crescimento."
+        )
+
+        c2.metric(
+            "Rating de Crédito",
+            rating_final,
+            help="Rating financeiro sintético, sem fatores qualitativos ou estruturais."
+        )
+
+        with st.expander("📊 Escala de Rating e Níveis de Risco", expanded=False):
+            st.markdown("""
+        ### Objetivo da Escala
+        Esta escala traduz o **score financeiro quantitativo** em uma **classificação de risco de crédito**
+        utilizada como referência para decisões em FIDCs.
+
+        ---
+
+        ### Escala de Rating Financeiro Base
+
+        | Rating | Faixa de Score | Nível de Risco | Interpretação |
+        |------|---------------|---------------|--------------|
+        | **AAA** | ≥ 0,90 | **Mínimo** | Estrutura financeira excepcional, alta previsibilidade de caixa |
+        | **AA** | 0,80 – 0,89 | **Muito Baixo** | Empresa muito sólida, baixa probabilidade de estresse |
+        | **A** | 0,70 – 0,79 | **Baixo** | Boa capacidade de pagamento e geração de caixa |
+        | **BBB** | 0,60 – 0,69 | **Moderado** | Estrutura adequada, sensível a ciclos |
+        | **BB** | 0,50 – 0,59 | **Moderado / Elevado** | Risco crescente, exige mitigadores |
+        | **B** | 0,40 – 0,49 | **Elevado** | Fragilidade financeira |
+        | **C** | < 0,40 | **Muito Elevado** | Alto risco de inadimplência |
+
+        ---
+
+        ### Importante
+        Este rating representa o **rating financeiro base do sacado**.
+        O rating final da operação pode diferir em função de:
+        - setor de atuação
+        - histórico de pagamentos
+        - concentração
+        - estrutura do FIDC
+        """)
+
+        # -------------------------------------------------------------
+        # OVERRIDE DE RATING (JULGAMENTO)
+        # -------------------------------------------------------------
+        st.markdown("---")
+        st.header("🧭 Ajuste de Julgamento (Override de Rating)")
+        
+
+        rating_cod_original = rating_final
+        def aplica_override_rating(rating_cod_original, ajuste_notch, rating_ordem):
+            """
+            Aplica override manual (múltiplos notches) ao rating original.
+
+            Retorna:
+                rating_cod_final (str)
+                houve_override (bool)
+            """
+
+            idx_original = rating_ordem.index(rating_cod_original)
+            idx_final = idx_original - ajuste_notch
+
+            # Garante que o índice fique dentro dos limites
+            idx_final = max(0, min(idx_final, len(rating_ordem) - 1))
+
+            rating_cod_final = rating_ordem[idx_final]
+            houve_override = ajuste_notch != 0
+
+            return rating_cod_final, houve_override
+
+
+
+        col_o1, col_o2 = st.columns([1, 2])
+
+        with col_o1:
+            ajuste_notch = st.slider(
+                "Ajuste de julgamento (notches)",
+                min_value=-5,
+                max_value=5,
+                value=0,
+                step=1,
+                help=(
+                    "Ajuste discricionário final do rating, em notches. "
+                    "Valores positivos melhoram o rating; negativos pioram."
+                )
+            )
+
+
+        with col_o2:
+            justificativa_override = st.text_area(
+                "Justificativa para override (se houver):",
+                value="",
+                height=80,
+                placeholder="Ex.: Concentração elevada de sacado, risco jurídico, evento climático recente, governança fraca, etc."
+            )
+
+        rating_cod_final, houve_override = aplica_override_rating(
+            rating_cod_original,
+            ajuste_notch,
+            rating_ordem
+        )
+
+
+        rating_label_final = rating_cod_final 
+
+        st.markdown("### 🏁 Resultado Final do Rating")
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "Rating Financeiro (Base)",
+            rating_cod_original,
+            help="Resultado exclusivo do modelo quantitativo financeiro."
+        )
+
+        c2.metric(
+            "Override Aplicado",
+            f"{ajuste_notch:+d} notches" if houve_override else "Sem ajuste",
+            help="Ajuste discricionário final aplicado ao rating financeiro."
+        )
+
+
+        c3.metric(
+            "Rating Final",
+            rating_cod_final,
+            help="Rating após aplicação do julgamento."
+        )
+
+        # -------------------------------------------------------------
+        # SPREAD INDICATIVO EM FAIXA (POR RATING)
+        # -------------------------------------------------------------
+        idx = rating_ordem.index(rating_cod_final)
+
+        # Ratings adjacentes
+        rating_melhor = rating_ordem[max(idx - 1, 0)]
+        rating_pior = rating_ordem[min(idx + 1, len(rating_ordem) - 1)]
+
+        # Spreads anuais
+        spread_min = SPREAD_POR_RATING[rating_melhor]
+        spread_max = SPREAD_POR_RATING[rating_pior]
+
+        # 1. Soma CDI + Spread para ter a Taxa Total Anual
+        # Importante: cdi_aa_pct deve estar em decimal (ex: 0.15 para 15%)
+        taxa_total_anual_min = (cdi_aa_pct / 100) + spread_min
+        taxa_total_anual_max = (cdi_aa_pct / 100) + spread_max
+
+        # 2. Converte a Taxa Total Anual para Mensal (Juros Compostos)
+        # Fórmula: (1 + taxa)^(1/12) - 1
+        taxa_mensal_min_calc = (1 + taxa_total_anual_min) ** (1/12) - 1
+        taxa_mensal_max_calc = (1 + taxa_total_anual_max) ** (1/12) - 1
+
+
+        # Texto explicativo (delta)
+        delta_texto = (
+            f"Faixa indicativa entre os ratings {rating_ordem[idx - 1]} e {rating_ordem[idx + 1]}"
+            if idx > 0 and idx < len(rating_ordem) - 1
+            else "Faixa limitada por ausência de rating adjacente"
+        )
+
+        st.markdown("### 💰 Precificação Inicial Sugerida")
+
+        c1, c2 = st.columns(2)
+
+        c1.metric(
+            "Rating de Referência",
+            rating_cod_final,
+            help="Rating final após modelo financeiro e override de julgamento."
+        )
+
+        c2.metric(
+            "Taxa Indicativa (CDI + Spread)",
+            # Valor Principal: Mostra o Spread Anual (CDI + X%)
+            f"CDI + {spread_min*100:.2f}% a CDI + {spread_max*100:.2f}%",
+            
+            # Delta (Verde): Mostra a Taxa Efetiva Mensal Calculada Corretamente
+            delta=(
+                f"Taxa mensal: {taxa_mensal_min_calc*100:.4f}% "
+                f"a {taxa_mensal_max_calc*100:.4f}% a.m."
+            ),
             help=(
-                "Ajuste discricionário final do rating, em notches. "
-                "Valores positivos melhoram o rating; negativos pioram."
+                f"Considerando CDI de {cdi_aa_pct*100:.1f}% a.a.\n"
+                "O valor principal é o spread anual sobre o CDI.\n"
+                "O valor em verde é a taxa final convertida para mês (juros compostos)."
             )
         )
 
 
-    with col_o2:
-        justificativa_override = st.text_area(
-            "Justificativa para override (se houver):",
-            value="",
-            height=80,
-            placeholder="Ex.: Concentração elevada de sacado, risco jurídico, evento climático recente, governança fraca, etc."
+
+
+        ratings = list(SPREAD_POR_RATING.keys())
+        spreads = list(SPREAD_POR_RATING.values())
+
+        rating_atual = rating_cod_final  # ex: "AA+"
+        spread_atual = SPREAD_POR_RATING[rating_atual]
+
+        idx = ratings.index(rating_atual)
+
+        x_min = idx - 0.5 if idx > 0 else idx
+        x_max = idx + 0.5 if idx < len(ratings) - 1 else idx
+
+
+        fig, ax = plt.subplots(figsize=(10, 4))
+
+        # Curva geral de spreads
+        ax.plot(
+            ratings,
+            spreads,
+            marker="o",
+            linewidth=2
         )
 
-    rating_cod_final, houve_override = aplica_override_rating(
-        rating_cod_original,
-        ajuste_notch,
-        rating_ordem
-    )
+        # Faixa vertical indicativa de spread (ratings adjacentes)
+        ax.axvspan(
+            x_min,
+            x_max,
+            alpha=0.20,
+            label="Faixa Indicativa de taxa"
+        )
 
 
-    rating_label_final = rating_cod_final 
+        # Ponto do rating atual (destacado)
+        ax.scatter(
+            rating_atual,
+            spread_atual,
+            color="red",
+            s=120,
+            zorder=5,
+            label="Rating Atual"
+        )
 
-    st.markdown("### 🏁 Resultado Final do Rating")
+        # Anotação opcional do ponto
+        ax.annotate(
+            f"{rating_atual}\nCDI + {spread_atual*100:.2f}%",
+            (ratings.index(rating_atual), spread_atual),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=9,
+            color="red"
+        )
 
-    c1, c2, c3 = st.columns(3)
+        ax.set_title("Curva Indicativa de Spread por Rating (CDI +)")
+        ax.set_xlabel("Rating de Crédito")
+        ax.set_ylabel("Spread (% a.a.)")
 
-    c1.metric(
-        "Rating Financeiro (Base)",
-        rating_cod_original,
-        help="Resultado exclusivo do modelo quantitativo financeiro."
-    )
+        ax.set_xticks(range(len(ratings)))
+        ax.set_xticklabels(ratings, rotation=45)
 
-    c2.metric(
-        "Override Aplicado",
-        f"{ajuste_notch:+d} notches" if houve_override else "Sem ajuste",
-        help="Ajuste discricionário final aplicado ao rating financeiro."
-    )
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+
+        fig.tight_layout()
+
+        st.pyplot(fig)
 
 
-    c3.metric(
-        "Rating Final",
-        rating_cod_final,
-        help="Rating após aplicação do julgamento."
-    )
+    with subtab_cadastro:
+        # -------------------------------------------------------------
+        # ANÁLISE DE ENQUADRAMENTO DA OPERAÇÃO NO FUNDO
+        # -------------------------------------------------------------
+        st.markdown("---")
+        st.header("🏛️ Enquadramento da Operação no Fundo")
+
+        # =============================
+        # INPUTS DA OPERAÇÃO E POLÍTICA
+        # =============================
+        col1, col2, col3, col4 = st.columns([1.5, 1.2,1.5, 1.2])
+
+        with col1:
+            valor_operacao = st.number_input(
+                "Valor da Operação (R$)",
+                min_value=0.0,
+                step=10_000.0,
+                value=10_000.0,
+                format="%.2f"
+            )
+
+        with col2:
+            limite_pct_pl_sacado = st.number_input(
+                "Limite por sacado (% do PL)",
+                min_value=0.0,
+                max_value=100.0,
+                value=10.0,
+                step=0.5
+            ) / 100
+
+        with col3:
+            caixa_disponivel = st.number_input(
+                "Caixa disponível no Fundo",
+                min_value=0.0,
+                value=(1-pct_recebiveis)*pl_total,
+                step=10_000.0,
+                format="%.2f"
+            )
+
+        with col4:
+            rating_minimo = st.selectbox(
+                "Rating mínimo permitido pelo fundo",
+                rating_ordem,
+                index=rating_ordem.index("BBB"),
+                key="rating_minimo_fundo"
+            )
+
+        # =============================
+        # CÁLCULOS DE ENQUADRAMENTO
+        # =============================
+        pct_pl_total = valor_operacao / pl_total if pl_total > 0 else 0
+        impacto_junior = valor_operacao / valor_junior if valor_junior > 0 else 0
+
+        idx_rating_final = rating_ordem.index(rating_cod_final)
+        idx_rating_min = rating_ordem.index(rating_minimo)
+
+        enquadrado_rating = idx_rating_final <= idx_rating_min
+
+        # =============================
+        # DELTA DE CONCENTRAÇÃO POR SACADO
+        # =============================
+        excesso_concentracao = pct_pl_total - limite_pct_pl_sacado
+
+        if excesso_concentracao > 0:
+            enquadrado_sacado = False
+            delta_status = f"+{excesso_concentracao*100:.2f} p.p."
+            delta_color = "inverse"  # vermelho
+        else:
+            enquadrado_sacado = True
+            delta_status = f"{excesso_concentracao*100:.2f} p.p."
+            delta_color = "normal"   # verde
+
+        # =============================
+        # STATUS FINAL DA OPERAÇÃO
+        # =============================
+        operacao_enquadrada = enquadrado_rating and enquadrado_sacado
+
+        if operacao_enquadrada:
+            status = "ENQUADRADO"
+            cor_status = "green"
+        else:
+            status = "DESENQUADRADO"
+            cor_status = "red"
+
+
+
+        # =============================
+        # OUTPUTS VISUAIS
+        # =============================
+        st.markdown("### 📊 Diagnóstico da Operação")
+
+        c1, c2, c3, c4 = st.columns(4)
+
+        c1.metric(
+            "Valor da Operação",
+            f"R$ {valor_operacao:,.0f}"
+        )
+
+        # =============================
+        # STATUS DA OPERAÇÃO POR CONCENTRAÇÃO
+        # =============================
+        if pct_pl_total > limite_pct_pl_sacado:
+            status_operacao = "DESENQUADRADO"
+            delta_color = "inverse"  # vermelho
+        else:
+            status_operacao = "ENQUADRADO"
+            delta_color = "normal"   # verde
+
+        c2.metric(
+            "% do PL Total",
+            f"{pct_pl_total*100:.2f}%",
+            delta=status_operacao,
+            delta_color=delta_color,
+            help=f"Limite máximo permitido por sacado: {limite_pct_pl_sacado*100:.1f}% do PL"
+        )
+
+
+
+        c3.metric(
+            "% do caixa a ser usado",
+            f"{(valor_operacao/caixa_disponivel)*100:.2f}%",
+            )
+
+        c4.metric(
+            "Impacto na Cota Júnior",
+            f"{impacto_junior*100:.2f}%",
+            help="Percentual da cota júnior consumido em caso de default total."
+        )
 
     # -------------------------------------------------------------
-    # SPREAD INDICATIVO EM FAIXA (POR RATING)
-    # -------------------------------------------------------------
-    idx = rating_ordem.index(rating_cod_final)
+        # ESTRUTURA DA OPERAÇÃO — PRÊMIO ESTRUTURAL
+        # -------------------------------------------------------------
+        st.markdown("---")
+        st.subheader("📐 Estrutura da Operação — Prêmio de Risco Estrutural")
 
-    # Ratings adjacentes
-    rating_melhor = rating_ordem[max(idx - 1, 0)]
-    rating_pior = rating_ordem[min(idx + 1, len(rating_ordem) - 1)]
-
-    # Spreads anuais
-    spread_min = SPREAD_POR_RATING[rating_melhor]
-    spread_max = SPREAD_POR_RATING[rating_pior]
-
-    # 1. Soma CDI + Spread para ter a Taxa Total Anual
-    # Importante: cdi_aa_pct deve estar em decimal (ex: 0.15 para 15%)
-    taxa_total_anual_min = (cdi_aa_pct / 100) + spread_min
-    taxa_total_anual_max = (cdi_aa_pct / 100) + spread_max
-
-    # 2. Converte a Taxa Total Anual para Mensal (Juros Compostos)
-    # Fórmula: (1 + taxa)^(1/12) - 1
-    taxa_mensal_min_calc = (1 + taxa_total_anual_min) ** (1/12) - 1
-    taxa_mensal_max_calc = (1 + taxa_total_anual_max) ** (1/12) - 1
-
-
-    # Texto explicativo (delta)
-    delta_texto = (
-        f"Faixa indicativa entre os ratings {rating_ordem[idx - 1]} e {rating_ordem[idx + 1]}"
-        if idx > 0 and idx < len(rating_ordem) - 1
-        else "Faixa limitada por ausência de rating adjacente"
-    )
-
-    st.markdown("### 💰 Precificação Inicial Sugerida")
-
-    c1, c2 = st.columns(2)
-
-    c1.metric(
-        "Rating de Referência",
-        rating_cod_final,
-        help="Rating final após modelo financeiro e override de julgamento."
-    )
-
-    c2.metric(
-        "Taxa Indicativa (CDI + Spread)",
-        # Valor Principal: Mostra o Spread Anual (CDI + X%)
-        f"CDI + {spread_min*100:.2f}% a CDI + {spread_max*100:.2f}%",
-        
-        # Delta (Verde): Mostra a Taxa Efetiva Mensal Calculada Corretamente
-        delta=(
-            f"Taxa mensal: {taxa_mensal_min_calc*100:.4f}% "
-            f"a {taxa_mensal_max_calc*100:.4f}% a.m."
-        ),
-        help=(
-            f"Considerando CDI de {cdi_aa_pct*100:.1f}% a.a.\n"
-            "O valor principal é o spread anual sobre o CDI.\n"
-            "O valor em verde é a taxa final convertida para mês (juros compostos)."
-        )
-    )
-
-
-
-
-    ratings = list(SPREAD_POR_RATING.keys())
-    spreads = list(SPREAD_POR_RATING.values())
-
-    rating_atual = rating_cod_final  # ex: "AA+"
-    spread_atual = SPREAD_POR_RATING[rating_atual]
-
-    idx = ratings.index(rating_atual)
-
-    x_min = idx - 0.5 if idx > 0 else idx
-    x_max = idx + 0.5 if idx < len(ratings) - 1 else idx
-
-
-    fig, ax = plt.subplots(figsize=(10, 4))
-
-    # Curva geral de spreads
-    ax.plot(
-        ratings,
-        spreads,
-        marker="o",
-        linewidth=2
-    )
-
-    # Faixa vertical indicativa de spread (ratings adjacentes)
-    ax.axvspan(
-        x_min,
-        x_max,
-        alpha=0.20,
-        label="Faixa Indicativa de taxa"
-    )
-
-
-    # Ponto do rating atual (destacado)
-    ax.scatter(
-        rating_atual,
-        spread_atual,
-        color="red",
-        s=120,
-        zorder=5,
-        label="Rating Atual"
-    )
-
-    # Anotação opcional do ponto
-    ax.annotate(
-        f"{rating_atual}\nCDI + {spread_atual*100:.2f}%",
-        (ratings.index(rating_atual), spread_atual),
-        textcoords="offset points",
-        xytext=(0, 10),
-        ha="center",
-        fontsize=9,
-        color="red"
-    )
-
-    ax.set_title("Curva Indicativa de Spread por Rating (CDI +)")
-    ax.set_xlabel("Rating de Crédito")
-    ax.set_ylabel("Spread (% a.a.)")
-
-    ax.set_xticks(range(len(ratings)))
-    ax.set_xticklabels(ratings, rotation=45)
-
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-
-    fig.tight_layout()
-
-    st.pyplot(fig)
-
-
-    # -------------------------------------------------------------
-    # ANÁLISE DE ENQUADRAMENTO DA OPERAÇÃO NO FUNDO
-    # -------------------------------------------------------------
-    st.markdown("---")
-    st.header("🏛️ Enquadramento da Operação no Fundo")
-
-    # =============================
-    # INPUTS DA OPERAÇÃO E POLÍTICA
-    # =============================
-    col1, col2, col3, col4 = st.columns([1.5, 1.2,1.5, 1.2])
-
-    with col1:
-        valor_operacao = st.number_input(
-            "Valor da Operação (R$)",
-            min_value=0.0,
-            step=10_000.0,
-            value=10_000.0,
-            format="%.2f"
+        st.caption(
+            "Este bloco avalia riscos operacionais e jurídicos da operação que não "
+            "são capturados pelo rating do sacado, ajustando a taxa exigida."
         )
 
-    with col2:
-        limite_pct_pl_sacado = st.number_input(
-            "Limite por sacado (% do PL)",
-            min_value=0.0,
-            max_value=100.0,
-            value=10.0,
-            step=0.5
-        ) / 100
+        # =============================
+        # INPUTS ESTRUTURAIS
+        # =============================
+        col_s1, col_s2 = st.columns(2)
 
-    with col3:
-        caixa_disponivel = st.number_input(
-            "Caixa disponível no Fundo",
-            min_value=0.0,
-            value=(1-pct_recebiveis)*pl_total,
-            step=10_000.0,
-            format="%.2f"
+        with col_s1:
+            operacao_confirmada = st.selectbox(
+                "A operação é confirmada?",
+                ["Sim", "Não"],
+                index=0,
+                key="op_confirmada"
+            )
+
+            forma_pagamento = st.selectbox(
+                "Forma de pagamento",
+                ["Boleto emitido pelo FIDC", "Comissária (conta do cedente)"],
+                index=0,
+                key="forma_pagamento"
+            )
+
+        with col_s2:
+            recompra_cedente = st.selectbox(
+                "Existe recompra por parte do cedente?",
+                ["Sim", "Não"],
+                index=0,
+                key="recompra"
+            )
+
+            trava_domicilio = st.selectbox(
+                "Existe trava de domicílio bancário?",
+                ["Sim", "Não"],
+                index=0,
+                key="trava"
+            )
+
+        # =============================
+        # MATRIZ DE AJUSTES (bps)
+        # =============================
+        ajustes_bps = {
+            "operacao_confirmada": 0 if operacao_confirmada == "Sim" else 20,
+            "forma_pagamento": 0 if forma_pagamento == "Boleto emitido pelo FIDC" else 25,
+            "recompra_cedente": 0 if recompra_cedente == "Sim" else 40,
+            "trava_domicilio": 0 if trava_domicilio == "Sim" else 30,
+        }
+
+        premio_estrutural_bps = sum(ajustes_bps.values())
+
+        # =============================
+        # CARD FINAL
+        # =============================
+        st.metric(
+            label="Prêmio Estrutural da Operação",
+            value=f"{premio_estrutural_bps:.0f} bps",
+            help=(
+                "Prêmio adicional exigido em função de riscos operacionais, "
+                "jurídicos e de liquidação da estrutura da operação."
+            )
         )
 
-    with col4:
-        rating_minimo = st.selectbox(
-            "Rating mínimo permitido pelo fundo",
-            rating_ordem,
-            index=rating_ordem.index("BBB"),
-            key="rating_minimo_fundo"
-        )
+        # ============================================================
+        # RACIONAL: RELACIONAMENTO COM O FUNDO E RESTRIÇÕES RECENTES
+        # ============================================================
 
-    # =============================
-    # CÁLCULOS DE ENQUADRAMENTO
-    # =============================
-    pct_pl_total = valor_operacao / pl_total if pl_total > 0 else 0
-    impacto_junior = valor_operacao / valor_junior if valor_junior > 0 else 0
+        st.markdown("### 🤝 Relacionamento e Risco de Momento")
 
-    idx_rating_final = rating_ordem.index(rating_cod_final)
-    idx_rating_min = rating_ordem.index(rating_minimo)
+        col_r1, col_r2 = st.columns(2)
 
-    enquadrado_rating = idx_rating_final <= idx_rating_min
+        # -----------------------------
+        # INPUTS
+        # -----------------------------
+        with col_r1:
+            tempo_relacionamento = st.selectbox(
+                "Tempo de relacionamento com o fundo",
+                [
+                    "Menos de 3 meses",
+                    "Entre 3 e 12 meses",
+                    "Entre 12 e 36 meses",
+                    "Mais de 36 meses"
+                ]
+            )
 
-    # =============================
-    # DELTA DE CONCENTRAÇÃO POR SACADO
-    # =============================
-    excesso_concentracao = pct_pl_total - limite_pct_pl_sacado
+        with col_r2:
+            restricoes_recentes = st.selectbox(
+                "Restrições recentes (jurídicas / operacionais)",
+                [
+                    "Nenhuma",
+                    "Leve",
+                    "Moderada",
+                    "Grave"
+                ]
+            )
 
-    if excesso_concentracao > 0:
-        enquadrado_sacado = False
-        delta_status = f"+{excesso_concentracao*100:.2f} p.p."
-        delta_color = "inverse"  # vermelho
-    else:
-        enquadrado_sacado = True
-        delta_status = f"{excesso_concentracao*100:.2f} p.p."
-        delta_color = "normal"   # verde
-
-    # =============================
-    # STATUS FINAL DA OPERAÇÃO
-    # =============================
-    operacao_enquadrada = enquadrado_rating and enquadrado_sacado
-
-    if operacao_enquadrada:
-        status = "ENQUADRADO"
-        cor_status = "green"
-    else:
-        status = "DESENQUADRADO"
-        cor_status = "red"
-
-
-
-    # =============================
-    # OUTPUTS VISUAIS
-    # =============================
-    st.markdown("### 📊 Diagnóstico da Operação")
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric(
-        "Valor da Operação",
-        f"R$ {valor_operacao:,.0f}"
-    )
-
-    # =============================
-    # STATUS DA OPERAÇÃO POR CONCENTRAÇÃO
-    # =============================
-    if pct_pl_total > limite_pct_pl_sacado:
-        status_operacao = "DESENQUADRADO"
-        delta_color = "inverse"  # vermelho
-    else:
-        status_operacao = "ENQUADRADO"
-        delta_color = "normal"   # verde
-
-    c2.metric(
-        "% do PL Total",
-        f"{pct_pl_total*100:.2f}%",
-        delta=status_operacao,
-        delta_color=delta_color,
-        help=f"Limite máximo permitido por sacado: {limite_pct_pl_sacado*100:.1f}% do PL"
-    )
-
-
-
-    c3.metric(
-        "% do caixa a ser usado",
-        f"{(valor_operacao/caixa_disponivel)*100:.2f}%",
-        )
-
-    c4.metric(
-        "Impacto na Cota Júnior",
-        f"{impacto_junior*100:.2f}%",
-        help="Percentual da cota júnior consumido em caso de default total."
-    )
-
-   # -------------------------------------------------------------
-    # ESTRUTURA DA OPERAÇÃO — PRÊMIO ESTRUTURAL
-    # -------------------------------------------------------------
-    st.markdown("---")
-    st.subheader("📐 Estrutura da Operação — Prêmio de Risco Estrutural")
-
-    st.caption(
-        "Este bloco avalia riscos operacionais e jurídicos da operação que não "
-        "são capturados pelo rating do sacado, ajustando a taxa exigida."
-    )
-
-    # =============================
-    # INPUTS ESTRUTURAIS
-    # =============================
-    col_s1, col_s2 = st.columns(2)
-
-    with col_s1:
-        operacao_confirmada = st.selectbox(
-            "A operação é confirmada?",
-            ["Sim", "Não"],
-            index=0,
-            key="op_confirmada"
-        )
-
-        forma_pagamento = st.selectbox(
-            "Forma de pagamento",
-            ["Boleto emitido pelo FIDC", "Comissária (conta do cedente)"],
-            index=0,
-            key="forma_pagamento"
-        )
-
-    with col_s2:
-        recompra_cedente = st.selectbox(
-            "Existe recompra por parte do cedente?",
-            ["Sim", "Não"],
-            index=0,
-            key="recompra"
-        )
-
-        trava_domicilio = st.selectbox(
-            "Existe trava de domicílio bancário?",
-            ["Sim", "Não"],
-            index=0,
-            key="trava"
-        )
-
-    # =============================
-    # MATRIZ DE AJUSTES (bps)
-    # =============================
-    ajustes_bps = {
-        "operacao_confirmada": 0 if operacao_confirmada == "Sim" else 20,
-        "forma_pagamento": 0 if forma_pagamento == "Boleto emitido pelo FIDC" else 25,
-        "recompra_cedente": 0 if recompra_cedente == "Sim" else 40,
-        "trava_domicilio": 0 if trava_domicilio == "Sim" else 30,
-    }
-
-    premio_estrutural_bps = sum(ajustes_bps.values())
-
-    # =============================
-    # CARD FINAL
-    # =============================
-    st.metric(
-        label="Prêmio Estrutural da Operação",
-        value=f"{premio_estrutural_bps:.0f} bps",
-        help=(
-            "Prêmio adicional exigido em função de riscos operacionais, "
-            "jurídicos e de liquidação da estrutura da operação."
-        )
-    )
-
-    # ============================================================
-    # RACIONAL: RELACIONAMENTO COM O FUNDO E RESTRIÇÕES RECENTES
-    # ============================================================
-
-    st.markdown("### 🤝 Relacionamento e Risco de Momento")
-
-    col_r1, col_r2 = st.columns(2)
-
-    # -----------------------------
-    # INPUTS
-    # -----------------------------
-    with col_r1:
-        tempo_relacionamento = st.selectbox(
-            "Tempo de relacionamento com o fundo",
-            [
-                "Menos de 3 meses",
-                "Entre 3 e 12 meses",
-                "Entre 12 e 36 meses",
-                "Mais de 36 meses"
-            ]
-        )
-
-    with col_r2:
-        restricoes_recentes = st.selectbox(
-            "Restrições recentes (jurídicas / operacionais)",
-            [
-                "Nenhuma",
-                "Leve",
-                "Moderada",
-                "Grave"
-            ]
-        )
-
-    # -----------------------------
-    # LÓGICA DE AJUSTE EM BPS
-    # -----------------------------
-    ajuste_relacionamento_bps = 0
-    ajuste_restricao_bps = 0
-    operacao_elegivel = True
-
-    # Relacionamento
-    if tempo_relacionamento == "Menos de 3 meses":
-        ajuste_relacionamento_bps = 20
-    elif tempo_relacionamento == "Entre 3 e 12 meses":
+        # -----------------------------
+        # LÓGICA DE AJUSTE EM BPS
+        # -----------------------------
         ajuste_relacionamento_bps = 0
-    elif tempo_relacionamento == "Entre 12 e 36 meses":
-        ajuste_relacionamento_bps = -10
-    elif tempo_relacionamento == "Mais de 36 meses":
-        ajuste_relacionamento_bps = -20
-
-    # Restrições
-    if restricoes_recentes == "Nenhuma":
         ajuste_restricao_bps = 0
-    elif restricoes_recentes == "Leve":
-        ajuste_restricao_bps = 25
-    elif restricoes_recentes == "Moderada":
-        ajuste_restricao_bps = 50
-    elif restricoes_recentes == "Grave":
-        operacao_elegivel = False
+        operacao_elegivel = True
 
-    # Ajuste total do bloco
-    ajuste_total_relacionamento_bps = ajuste_relacionamento_bps + ajuste_restricao_bps
+        # Relacionamento
+        if tempo_relacionamento == "Menos de 3 meses":
+            ajuste_relacionamento_bps = 20
+        elif tempo_relacionamento == "Entre 3 e 12 meses":
+            ajuste_relacionamento_bps = 0
+        elif tempo_relacionamento == "Entre 12 e 36 meses":
+            ajuste_relacionamento_bps = -10
+        elif tempo_relacionamento == "Mais de 36 meses":
+            ajuste_relacionamento_bps = -20
 
-    st.markdown("")
+        # Restrições
+        if restricoes_recentes == "Nenhuma":
+            ajuste_restricao_bps = 0
+        elif restricoes_recentes == "Leve":
+            ajuste_restricao_bps = 25
+        elif restricoes_recentes == "Moderada":
+            ajuste_restricao_bps = 50
+        elif restricoes_recentes == "Grave":
+            operacao_elegivel = False
 
-    k1, k2, k3 = st.columns(3)
+        # Ajuste total do bloco
+        ajuste_total_relacionamento_bps = ajuste_relacionamento_bps + ajuste_restricao_bps
 
-    k1.metric(
-        "Ajuste por Relacionamento",
-        f"{ajuste_relacionamento_bps:+.0f} bps",
-        help="Impacto do histórico do cedente com o fundo."
-    )
+        st.markdown("")
 
-    k2.metric(
-        "Ajuste por Restrições Recentes",
-        f"{ajuste_restricao_bps:+.0f} bps" if operacao_elegivel else "N/A",
-        help="Risco de momento: jurídico, operacional ou comportamental."
-    )
+        k1, k2, k3 = st.columns(3)
 
-    if operacao_elegivel:
-        k3.metric(
-            "Ajuste Total (Relacionamento)",
-            f"{ajuste_total_relacionamento_bps:+.0f} bps",
-            help="Soma dos ajustes de relacionamento e restrições."
-        )
-    else:
-        k3.metric(
-            "Status da Operação",
-            "NÃO ELEGÍVEL",
-            help="Restrições graves inviabilizam a operação."
+        k1.metric(
+            "Ajuste por Relacionamento",
+            f"{ajuste_relacionamento_bps:+.0f} bps",
+            help="Impacto do histórico do cedente com o fundo."
         )
 
-    # -------------------------------------------------
-    # CUSTO BASE DO FUNDO (WACC ECONÔMICO)
-    # -------------------------------------------------
-
-    # Taxas anuais efetivas por cota
-    taxa_senior_aa = cdi_aa + (spread_senior_aa_pct / 100)
-    taxa_mezz_aa   = cdi_aa + (spread_mezz_aa_pct / 100)
-    taxa_junior_aa = cdi_aa  # custo de oportunidade da Júnior
-
-    # PL total já existe
-    # pl_total = valor_junior + valor_mezz + valor_senior
-
-    if pl_total > 0:
-        custo_base_aa = (
-            valor_senior * taxa_senior_aa +
-            valor_mezz   * taxa_mezz_aa +
-            valor_junior * taxa_junior_aa
-        ) / pl_total
-    else:
-        custo_base_aa = 0.0
-
-    # Conversão para mensal
-    custo_base_am = (1 + custo_base_aa) ** (1/12) - 1
-
-    st.metric(
-        "Custo Base do Fundo",
-        f"{custo_base_am*100:.2f}% a.m.",
-        help=(
-            "Custo médio ponderado do capital total do fundo. "
-            "Inclui Sênior (CDI + spread), Mezzanino (CDI + spread) "
-            "e Júnior ao custo de oportunidade do CDI."
+        k2.metric(
+            "Ajuste por Restrições Recentes",
+            f"{ajuste_restricao_bps:+.0f} bps" if operacao_elegivel else "N/A",
+            help="Risco de momento: jurídico, operacional ou comportamental."
         )
-    )
 
-    
+        if operacao_elegivel:
+            k3.metric(
+                "Ajuste Total (Relacionamento)",
+                f"{ajuste_total_relacionamento_bps:+.0f} bps",
+                help="Soma dos ajustes de relacionamento e restrições."
+            )
+        else:
+            k3.metric(
+                "Status da Operação",
+                "NÃO ELEGÍVEL",
+                help="Restrições graves inviabilizam a operação."
+            )
+
+        # -------------------------------------------------
+        # CUSTO BASE DO FUNDO (WACC ECONÔMICO)
+        # -------------------------------------------------
+
+        # Taxas anuais efetivas por cota
+        taxa_senior_aa = cdi_aa + (spread_senior_aa_pct / 100)
+        taxa_mezz_aa   = cdi_aa + (spread_mezz_aa_pct / 100)
+        taxa_junior_aa = cdi_aa  # custo de oportunidade da Júnior
+
+        # PL total já existe
+        # pl_total = valor_junior + valor_mezz + valor_senior
+
+        if pl_total > 0:
+            custo_base_aa = (
+                valor_senior * taxa_senior_aa +
+                valor_mezz   * taxa_mezz_aa +
+                valor_junior * taxa_junior_aa
+            ) / pl_total
+        else:
+            custo_base_aa = 0.0
+
+        # Conversão para mensal
+        custo_base_am = (1 + custo_base_aa) ** (1/12) - 1
+
+        st.metric(
+            "Custo Base do Fundo",
+            f"{custo_base_am*100:.2f}% a.m.",
+            help=(
+                "Custo médio ponderado do capital total do fundo. "
+                "Inclui Sênior (CDI + spread), Mezzanino (CDI + spread) "
+                "e Júnior ao custo de oportunidade do CDI."
+            )
+        )
+
+    with subtab_taxa:
     # Conversão para percentual mensal
-    taxa_base_pct = custo_base_am * 100
-    spread_rating_am = (1 + spread_atual) ** (1/12) - 1
-    spread_rating_pct = spread_rating_am * 100
-    spread_estrutura_pct = premio_estrutural_bps/100
-    spread_relacionamento_pct = ajuste_total_relacionamento_bps/100
+        taxa_base_pct = custo_base_am * 100
+        spread_rating_am = (1 + spread_atual) ** (1/12) - 1
+        spread_rating_pct = spread_rating_am * 100
+        spread_estrutura_pct = premio_estrutural_bps/100
+        spread_relacionamento_pct = ajuste_total_relacionamento_bps/100
 
-    # -------------------------------------------------
-# COMPOSIÇÃO FINAL DA TAXA — WATERFALL
-# -------------------------------------------------
+         # -------------------------------------------------
+        # COMPOSIÇÃO FINAL DA TAXA — WATERFALL
+        # -------------------------------------------------
 
-# Taxa base (já em a.m.)
-taxa_base_pct = custo_base_am * 100
+        # Taxa base (já em a.m.)
+        taxa_base_pct = custo_base_am * 100
 
-# Spread de rating (converter de a.a. para a.m.)
-spread_rating_am = (1 + spread_atual) ** (1/12) - 1
-spread_rating_pct = spread_rating_am * 100
+        # Spread de rating (converter de a.a. para a.m.)
+        spread_rating_am = (1 + spread_atual) ** (1/12) - 1
+        spread_rating_pct = spread_rating_am * 100
 
-# Spread estrutural (bps → % a.m.)
-spread_estrutura_pct = premio_estrutural_bps / 100
+        # Spread estrutural (bps → % a.m.)
+        spread_estrutura_pct = premio_estrutural_bps / 100
 
-# Spread de relacionamento (bps → % a.m.)
-spread_relacionamento_pct = ajuste_total_relacionamento_bps / 100
+        # Spread de relacionamento (bps → % a.m.)
+        spread_relacionamento_pct = ajuste_total_relacionamento_bps / 100
 
-# Taxa total
-taxa_bruta_pct = (
-    taxa_base_pct
-    + spread_rating_pct
-    + spread_estrutura_pct
-    + spread_relacionamento_pct
-)
+        # Taxa total
+        taxa_bruta_pct = (
+            taxa_base_pct
+            + spread_rating_pct
+            + spread_estrutura_pct
+            + spread_relacionamento_pct
+        )
 
 
-pdd_am_pct = pdd_ponderada_view/12
-taxa_liquida_pct = taxa_bruta_pct - pdd_am_pct
+        pdd_am_pct = pdd_ponderada_view/12
+        taxa_liquida_pct = taxa_bruta_pct - pdd_am_pct
 
-fig_waterfall = go.Figure(go.Waterfall(
-    orientation="v",
-    measure=[
-        "absolute",
-        "relative",
-        "relative",
-        "relative",
-        "total",
-        "relative",
-        "total"
-    ],
-    x=[
-        "Taxa Base",
-        "Spread de Rating",
-        "Spread da Estrutura",
-        "Spread de Relacionamento",
-        "Taxa Bruta da Operação",
-        "(-) PDD Esperado",
-        "Taxa Líquida da Operação"
-    ],
-    y=[
-        taxa_base_pct,
-        spread_rating_pct,
-        spread_estrutura_pct,
-        spread_relacionamento_pct,
-        taxa_bruta_pct,
-        -pdd_am_pct,
-        taxa_liquida_pct
-    ],
-    text=[
-        f"{taxa_base_pct:.2f}%",
-        f"{spread_rating_pct:+.2f}%",
-        f"{spread_estrutura_pct:+.2f}%",
-        f"{spread_relacionamento_pct:+.2f}%",
-        f"{taxa_bruta_pct:.2f}%",
-        f"-{pdd_am_pct:.2f}%",
-        f"{taxa_liquida_pct:.2f}%"
-    ],
-    textposition="outside",
-    connector={"line": {"color": "rgba(0,0,0,0.3)"}}
-))
+        fig_waterfall = go.Figure(go.Waterfall(
+            orientation="v",
+            measure=[
+                "absolute",
+                "relative",
+                "relative",
+                "relative",
+                "total",
+                "relative",
+                "total"
+            ],
+            x=[
+                "Taxa Base",
+                "Spread de Rating",
+                "Spread da Estrutura",
+                "Spread de Relacionamento",
+                "Taxa Bruta da Operação",
+                "(-) PDD Esperado",
+                "Taxa Líquida da Operação"
+            ],
+            y=[
+                taxa_base_pct,
+                spread_rating_pct,
+                spread_estrutura_pct,
+                spread_relacionamento_pct,
+                taxa_bruta_pct,
+                -pdd_am_pct,
+                taxa_liquida_pct
+            ],
+            text=[
+                f"{taxa_base_pct:.2f}%",
+                f"{spread_rating_pct:+.2f}%",
+                f"{spread_estrutura_pct:+.2f}%",
+                f"{spread_relacionamento_pct:+.2f}%",
+                f"{taxa_bruta_pct:.2f}%",
+                f"-{pdd_am_pct:.2f}%",
+                f"{taxa_liquida_pct:.2f}%"
+            ],
+            textposition="outside",
+            connector={"line": {"color": "rgba(0,0,0,0.3)"}}
+        ))
 
-fig_waterfall.update_layout(
-    title="Composição da Taxa da Operação — Líquida de PDD (% a.m.)",
-    yaxis_title="Taxa (% a.m.)",
-    height=550,
-    showlegend=False
-)
+        fig_waterfall.update_layout(
+            title="Composição da Taxa da Operação — Líquida de PDD (% a.m.)",
+            yaxis_title="Taxa (% a.m.)",
+            height=550,
+            showlegend=False
+        )
 
-st.plotly_chart(fig_waterfall, use_container_width=True)
+        st.plotly_chart(fig_waterfall, use_container_width=True)
 
