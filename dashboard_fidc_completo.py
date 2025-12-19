@@ -3088,6 +3088,8 @@ with tab_rating:
         }
 
         premio_estrutural_bps = sum(ajustes_bps.values())
+        st.session_state["premio_estrutural_bps"] = premio_estrutural_bps
+
 
         # =============================
         # CARD FINAL
@@ -3221,16 +3223,7 @@ with tab_rating:
         st.session_state["custo_base_am"] = custo_base_am
 
 
-        st.metric(
-            "Custo Base do Fundo",
-            f"{custo_base_am*100:.2f}% a.m.",
-            help=(
-                "Custo médio ponderado do capital total do fundo. "
-                "Inclui Sênior (CDI + spread), Mezzanino (CDI + spread) "
-                "e Júnior ao custo de oportunidade do CDI."
-            )
-        )
-
+        
     with subtab_analise:
         
 
@@ -3757,35 +3750,25 @@ with tab_rating:
         - estrutura do FIDC
         """)
 
+       
+
+
+
         # -------------------------------------------------------------
         # OVERRIDE DE RATING (JULGAMENTO)
         # -------------------------------------------------------------
         st.markdown("---")
         st.header("🧭 Ajuste de Julgamento (Override de Rating)")
-        
 
         rating_cod_original = rating_final
+
         def aplica_override_rating(rating_cod_original, ajuste_notch, rating_ordem):
-            """
-            Aplica override manual (múltiplos notches) ao rating original.
-
-            Retorna:
-                rating_cod_final (str)
-                houve_override (bool)
-            """
-
             idx_original = rating_ordem.index(rating_cod_original)
             idx_final = idx_original - ajuste_notch
-
-            # Garante que o índice fique dentro dos limites
             idx_final = max(0, min(idx_final, len(rating_ordem) - 1))
-
             rating_cod_final = rating_ordem[idx_final]
             houve_override = ajuste_notch != 0
-
             return rating_cod_final, houve_override
-
-
 
         col_o1, col_o2 = st.columns([1, 2])
 
@@ -3802,7 +3785,6 @@ with tab_rating:
                 )
             )
 
-
         with col_o2:
             justificativa_override = st.text_area(
                 "Justificativa para override:",
@@ -3818,123 +3800,95 @@ with tab_rating:
         )
 
         st.session_state["rating_cod_final"] = rating_cod_final
+        rating_label_final = rating_cod_final
 
+        # -------------------------------------------------------------
+        # ENQUADRAMENTO vs RATING MÍNIMO
+        # -------------------------------------------------------------
         rating_minimo = st.session_state.get("rating_minimo_fundo", "BBB")
 
         idx_rating_final = rating_ordem.index(rating_cod_final)
-        idx_rating_min = rating_ordem.index(rating_minimo)
+        idx_rating_min   = rating_ordem.index(rating_minimo)
 
         enquadrado_rating = idx_rating_final <= idx_rating_min
 
-        st.metric(
-            "Rating de Crédito",
-            rating_cod_final,
-            delta="ENQUADRADO" if enquadrado_rating else "DESENQUADRADO",
-            delta_color="normal" if enquadrado_rating else "inverse",
-            help=f"Rating mínimo permitido pelo fundo: {rating_minimo}"
-        )
-        
-        rating_label_final = rating_cod_final 
-
-        st.markdown("### 🏁 Resultado Final do Rating")
-
-        c1, c2, c3 = st.columns(3)
-
-        c1.metric(
-            "Rating Financeiro (Base)",
-            rating_cod_original,
-            help="Resultado exclusivo do modelo quantitativo financeiro."
-        )
-
-        c2.metric(
-            "Override Aplicado",
-            f"{ajuste_notch:+d} notches" if houve_override else "Sem ajuste",
-            help="Ajuste discricionário final aplicado ao rating financeiro."
-        )
-
-
-        c3.metric(
-            "Rating Final",
-            rating_cod_final,
-            help="Rating após aplicação do julgamento."
-        )
-
         # -------------------------------------------------------------
-        # SPREAD INDICATIVO EM FAIXA (POR RATING)
+        # SPREAD INDICATIVO EM FAIXA (POR RATING) — PRECISA VIR ANTES DOS CARDS
         # -------------------------------------------------------------
         idx = rating_ordem.index(rating_cod_final)
 
-        # Ratings adjacentes
         rating_melhor = rating_ordem[max(idx - 1, 0)]
-        rating_pior = rating_ordem[min(idx + 1, len(rating_ordem) - 1)]
+        rating_pior   = rating_ordem[min(idx + 1, len(rating_ordem) - 1)]
 
-        # Spreads anuais
         spread_min = SPREAD_POR_RATING[rating_melhor]
         spread_max = SPREAD_POR_RATING[rating_pior]
 
-        # 1. Soma CDI + Spread para ter a Taxa Total Anual
-        # Importante: cdi_aa_pct deve estar em decimal (ex: 0.15 para 15%)
         taxa_total_anual_min = (cdi_aa_pct / 100) + spread_min
         taxa_total_anual_max = (cdi_aa_pct / 100) + spread_max
 
-        # 2. Converte a Taxa Total Anual para Mensal (Juros Compostos)
-        # Fórmula: (1 + taxa)^(1/12) - 1
         taxa_mensal_min_calc = (1 + taxa_total_anual_min) ** (1/12) - 1
         taxa_mensal_max_calc = (1 + taxa_total_anual_max) ** (1/12) - 1
 
+        # -------------------------------------------------------------
+        # CARDS — APENAS 2 (Rating + Taxa Indicativa) LADO A LADO
+        # -------------------------------------------------------------
+        col_r1, col_r_spread, col_r2 = st.columns([1, 1, 1])
 
-        # Texto explicativo (delta)
-        delta_texto = (
-            f"Faixa indicativa entre os ratings {rating_ordem[idx - 1]} e {rating_ordem[idx + 1]}"
-            if idx > 0 and idx < len(rating_ordem) - 1
-            else "Faixa limitada por ausência de rating adjacente"
-        )
-
-        st.markdown("### 💰 Precificação Inicial Sugerida")
-
-        c1, c2 = st.columns(2)
-
-        c1.metric(
-            "Rating de Referência",
-            rating_cod_final,
-            help="Rating final após modelo financeiro e override de julgamento."
-        )
-
-        c2.metric(
-            "Taxa Indicativa (CDI + Spread)",
-            # Valor Principal: Mostra o Spread Anual (CDI + X%)
-            f"CDI + {spread_min*100:.2f}% a CDI + {spread_max*100:.2f}%",
-            
-            # Delta (Verde): Mostra a Taxa Efetiva Mensal Calculada Corretamente
-            delta=(
-                f"Taxa mensal: {taxa_mensal_min_calc*100:.4f}% "
-                f"a {taxa_mensal_max_calc*100:.4f}% a.m."
-            ),
-            help=(
-                f"Considerando CDI de {cdi_aa_pct*100:.1f}% a.a.\n"
-                "O valor principal é o spread anual sobre o CDI.\n"
-                "O valor em verde é a taxa final convertida para mês (juros compostos)."
+        with col_r1:
+            st.metric(
+                "Rating de Crédito",
+                rating_cod_final,
+                delta="ENQUADRADO" if enquadrado_rating else "DESENQUADRADO",
+                delta_color="normal" if enquadrado_rating else "inverse",
+                help=f"Rating mínimo permitido pelo fundo: {rating_minimo}"
             )
-        )
 
 
+        with col_r_spread:
+            spread_ref_aa = SPREAD_POR_RATING.get(rating_cod_final, 0.0)   # spread a.a. do rating atual
+            spread_ref_am = (1 + spread_ref_aa) ** (1/12) - 1              # spread a.m. (juros compostos)
+
+            st.metric(
+                "Spread do Rating",
+                f"{spread_ref_aa*100:.2f}% a.a.",
+                delta=f"{spread_ref_am*100:.4f}% a.m.",
+                help="Spread indicado para o rating calculado no card de Rating de Crédito."
+            )
+
+        with col_r2:
+            # Spread mínimo/máximo já calculados acima (spread_min/spread_max) — ambos a.a.
+            spread_min_am = (1 + spread_min) ** (1/12) - 1
+            spread_max_am = (1 + spread_max) ** (1/12) - 1
+
+            st.metric(
+                "Faixa Indicativa de Spread",
+                f"{spread_min*100:.2f}% a {spread_max*100:.2f}% a.a.",
+                delta=(
+                    f"Spread mensal: {spread_min_am*100:.4f}% "
+                    f"a {spread_max_am*100:.4f}% a.m."
+                ),
+                help=(
+                    "O valor principal é a faixa de spread anual por rating adjacente.\n"
+                    "O valor em verde é o spread convertido para mês (juros compostos)."
+                )
+            )
 
 
+        # -------------------------------------------------------------
+        # GRÁFICO (mantém como estava)
+        # -------------------------------------------------------------
         ratings = list(SPREAD_POR_RATING.keys())
         spreads = list(SPREAD_POR_RATING.values())
 
-        rating_atual = rating_cod_final  # ex: "AA+"
+        rating_atual = rating_cod_final
         spread_atual = SPREAD_POR_RATING[rating_atual]
 
-        idx = ratings.index(rating_atual)
-
-        x_min = idx - 0.5 if idx > 0 else idx
-        x_max = idx + 0.5 if idx < len(ratings) - 1 else idx
-
+        idx_plot = ratings.index(rating_atual)
+        x_min = idx_plot - 0.5 if idx_plot > 0 else idx_plot
+        x_max = idx_plot + 0.5 if idx_plot < len(ratings) - 1 else idx_plot
 
         fig, ax = plt.subplots(figsize=(10, 4))
 
-        # Curva geral de spreads
         ax.plot(
             ratings,
             spreads,
@@ -3942,7 +3896,6 @@ with tab_rating:
             linewidth=2
         )
 
-        # Faixa vertical indicativa de spread (ratings adjacentes)
         ax.axvspan(
             x_min,
             x_max,
@@ -3950,8 +3903,6 @@ with tab_rating:
             label="Faixa Indicativa de taxa"
         )
 
-
-        # Ponto do rating atual (destacado)
         ax.scatter(
             rating_atual,
             spread_atual,
@@ -3961,7 +3912,6 @@ with tab_rating:
             label="Rating Atual"
         )
 
-        # Anotação opcional do ponto
         ax.annotate(
             f"{rating_atual}\nCDI + {spread_atual*100:.2f}%",
             (ratings.index(rating_atual), spread_atual),
@@ -3983,7 +3933,6 @@ with tab_rating:
         ax.legend()
 
         fig.tight_layout()
-
         st.pyplot(fig)
 
 
@@ -3991,22 +3940,70 @@ with tab_rating:
 
 
     with subtab_taxa:
-    # Conversão para percentual mensal
-        taxa_base_pct = custo_base_am * 100
-        spread_rating_am = (1 + spread_atual) ** (1/12) - 1
-        spread_rating_pct = spread_rating_am * 100
-        spread_estrutura_pct = premio_estrutural_bps/100
-        spread_relacionamento_pct = ajuste_total_relacionamento_bps/100
 
-         # -------------------------------------------------
-        # COMPOSIÇÃO FINAL DA TAXA — WATERFALL
+        premio_estrutural_bps = st.session_state.get("premio_estrutural_bps", 0)
+        ajuste_total_relacionamento_bps = st.session_state.get("ajuste_total_relacionamento_bps", 0)
+        custo_base_am = st.session_state.get("custo_base_am", 0.0)
+
+        rating_cod_final = st.session_state.get("rating_cod_final", None)
+        spread_atual = SPREAD_POR_RATING.get(rating_cod_final, 0.0) if rating_cod_final else 0.0
+
+
+        # Spread do rating (a.a. e a.m.)
+        spread_ref_aa = SPREAD_POR_RATING.get(rating_cod_final, 0.0) if rating_cod_final else 0.0
+        spread_ref_am = (1 + spread_ref_aa) ** (1/12) - 1
+
+        # PDD (mantive seu padrão)
+        pdd_am_pct = (pdd_ponderada_view / 12) if "pdd_ponderada_view" in globals() else 0.0
+
+        # ---------- CARDS (TUDO NA MESMA LINHA) ----------
+        c1, c2, c3, c4, c5 = st.columns(5)
+
+        with c1:
+            st.metric(
+                "Custo Base do Fundo",
+                f"{custo_base_am*100:.2f}% a.m."
+            )
+
+        with c2:
+            st.metric(
+                "Prêmio Estrutural da Operação",
+                f"{premio_estrutural_bps:.0f} bps",
+                delta=f"{(premio_estrutural_bps/100):+.2f}% a.m."
+            )
+
+        with c3:
+            st.metric(
+                "Ajuste Total (Relacionamento)",
+                f"{ajuste_total_relacionamento_bps:+.0f} bps",
+                delta=f"{(ajuste_total_relacionamento_bps/100):+.2f}% a.m."
+            )
+
+        with c4:
+            st.metric(
+                "Spread do Rating",
+                f"{spread_ref_aa*100:.2f}% a.a.",
+                delta=f"{spread_ref_am*100:.4f}% a.m."
+            )
+
+        with c5:
+            st.metric(
+                "PDD Esperado",
+                f"{pdd_ponderada_view:.2f}% a.a." if "pdd_ponderada_view" in globals() else "—",
+                delta=f"{pdd_am_pct:.4f}% a.m."
+            )
+
+        st.markdown("---")
+
+        # -------------------------------------------------
+        # BASE DE CÁLCULO DAS TAXAS (OBRIGATÓRIO ANTES DO WATERFALL)
         # -------------------------------------------------
 
-        # Taxa base (já em a.m.)
+        # Taxa base do fundo (a.m.)
         taxa_base_pct = custo_base_am * 100
 
-        # Spread de rating (converter de a.a. para a.m.)
-        spread_rating_am = (1 + spread_atual) ** (1/12) - 1
+        # Spread do rating (a.a. → a.m.)
+        spread_rating_am = (1 + spread_ref_aa) ** (1/12) - 1
         spread_rating_pct = spread_rating_am * 100
 
         # Spread estrutural (bps → % a.m.)
@@ -4015,7 +4012,10 @@ with tab_rating:
         # Spread de relacionamento (bps → % a.m.)
         spread_relacionamento_pct = ajuste_total_relacionamento_bps / 100
 
-        # Taxa total
+        # PDD
+        pdd_am_pct = pdd_ponderada_view / 12
+
+        # Taxas agregadas
         taxa_bruta_pct = (
             taxa_base_pct
             + spread_rating_pct
@@ -4023,9 +4023,9 @@ with tab_rating:
             + spread_relacionamento_pct
         )
 
-
-        pdd_am_pct = pdd_ponderada_view/12
         taxa_liquida_pct = taxa_bruta_pct - pdd_am_pct
+
+
 
         fig_waterfall = go.Figure(go.Waterfall(
             orientation="v",
