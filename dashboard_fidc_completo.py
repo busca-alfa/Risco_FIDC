@@ -8,6 +8,11 @@ from streamlit_drawable_canvas import st_canvas
 import io
 from PIL import Image
 import matplotlib.pyplot as plt
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+
+
 
 FIDC_STORE_PATH = Path(__file__).parent / "fidcs.json"
 
@@ -2912,8 +2917,121 @@ with tab_rating:
         rating_minimo = st.session_state.get("rating_minimo_fundo", "BBB")
 
         # -------------------------------------------------------------
-        # ANÁLISE DE ENQUADRAMENTO DA OPERAÇÃO NO FUNDO
+        # CADASTRO DO SACADO (CLIENTE)
         # -------------------------------------------------------------
+        st.subheader("🧾 Cadastro do Sacado")
+
+        c_cli1, c_cli2 = st.columns([2, 1])
+
+        # -------------------------------------------------------------
+        # CADASTRO DO SACADO
+        # -------------------------------------------------------------
+
+        # inicialização (ANTES dos widgets)
+        if "nome_sacado" not in st.session_state:
+            st.session_state["nome_sacado"] = ""
+        if "cnpj_sacado" not in st.session_state:
+            st.session_state["cnpj_sacado"] = ""
+        if "notas_comite" not in st.session_state:
+            st.session_state["notas_comite"] = ""
+
+        st.subheader("🧾 Cadastro do Sacado")
+
+        c_cli1, c_cli2 = st.columns([2, 1])
+
+        with c_cli1:
+            st.text_input(
+                "Nome do Sacado",
+                key="nome_sacado"
+            )
+
+        with c_cli2:
+            st.text_input(
+                "CNPJ do Sacado",
+                key="cnpj_sacado"
+            )
+
+        st.text_area(
+            "Resumo do Comitê de Crédito",
+            key="notas_comite",
+            height=120,
+            placeholder="Discussões, ressalvas, condições e decisões do comitê"
+        )
+
+        
+
+        # -------------------------------------------------------------
+        # EXPORTAÇÃO — RESUMO DO COMITÊ (DOWNLOAD + LOG)
+        # -------------------------------------------------------------
+        st.markdown("---")
+        st.subheader("📄 Exportar Resumo do Comitê")
+
+        # pega horário Brasil
+        agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+        agora_str = agora.strftime("%Y-%m-%d %H:%M:%S")
+        agora_file = agora.strftime("%Y%m%d_%H%M%S")
+
+        # monta payload (você pode ir adicionando campos aqui)
+        payload = {
+            "gerado_em": agora_str,
+            "sacado": {
+                "nome": st.session_state.get("nome_sacado", ""),
+                "cnpj": st.session_state.get("cnpj_sacado", ""),
+            },
+            "operacao": {
+                "valor_operacao": float(valor_operacao) if "valor_operacao" in locals() else None,
+                "limite_pct_pl_sacado": float(limite_pct_pl_sacado) if "limite_pct_pl_sacado" in locals() else None,
+                "caixa_disponivel": float(caixa_disponivel) if "caixa_disponivel" in locals() else None,
+                "rating_minimo_fundo": st.session_state.get("rating_minimo_fundo", None),
+                "rating_final_operacao": st.session_state.get("rating_cod_final", None),
+            },
+            "comite": {
+                "notas": st.session_state.get("notas_comite", "")
+            }
+        }
+
+        # arquivo em JSON (simples, robusto)
+        arquivo_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        nome_arquivo = f"comite_credito_{agora_file}_{st.session_state.get('cnpj_sacado') or 'sem_cnpj'}.json"
+
+
+        # salva timestamp do último "prepare" (visual)
+        st.caption(f"Prévia de geração: {agora_str}")
+
+        # botão de download
+        download = st.download_button(
+            "⬇️ Baixar resumo do comitê",
+            data=arquivo_bytes,
+            file_name=nome_arquivo,
+            mime="application/json",
+            use_container_width=True,
+            key="btn_download_comite"
+        )
+
+        # quando clicar, registra log + timestamp no session_state
+        if download:
+            st.session_state["ultimo_download_comite_em"] = agora_str
+
+            # log simples local (se der permissão no ambiente)
+            try:
+                log_item = {
+                    "timestamp": agora_str,
+                    "arquivo": nome_arquivo,
+                    "nome_sacado": st.session_state.get("nome_sacado", ""),
+                    "cnpj_sacado": st.session_state.get("cnpj_sacado", ""),
+                }
+                with open("log_downloads_comite.jsonl", "a", encoding="utf-8") as f:
+                    f.write(json.dumps(log_item, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+
+        # mostra último registro
+        if st.session_state.get("ultimo_download_comite_em"):
+            st.success(f"Último arquivo gerado em: {st.session_state['ultimo_download_comite_em']}")
+
+        
+
+
         st.markdown("---")
         st.header("🏛️ Enquadramento da Operação no Fundo")
 
