@@ -10,6 +10,12 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+from io import BytesIO
+
+
 
 
 
@@ -2935,8 +2941,6 @@ with tab_rating:
         if "notas_comite" not in st.session_state:
             st.session_state["notas_comite"] = ""
 
-        st.subheader("🧾 Cadastro do Sacado")
-
         c_cli1, c_cli2 = st.columns([2, 1])
 
         with c_cli1:
@@ -2961,77 +2965,158 @@ with tab_rating:
         
 
         # -------------------------------------------------------------
-        # EXPORTAÇÃO — RESUMO DO COMITÊ (DOWNLOAD + LOG)
+        # EXPORTAÇÃO — RELATÓRIO DO COMITÊ (PDF)
         # -------------------------------------------------------------
         st.markdown("---")
-        st.subheader("📄 Exportar Resumo do Comitê")
+        st.subheader("📄 Relatório do Comitê de Crédito (PDF)")
 
-        # pega horário Brasil
+        # data/hora Brasil
         agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
-        agora_str = agora.strftime("%Y-%m-%d %H:%M:%S")
+        agora_str = agora.strftime("%d/%m/%Y %H:%M")
         agora_file = agora.strftime("%Y%m%d_%H%M%S")
 
-        # monta payload (você pode ir adicionando campos aqui)
-        payload = {
-            "gerado_em": agora_str,
-            "sacado": {
-                "nome": st.session_state.get("nome_sacado", ""),
-                "cnpj": st.session_state.get("cnpj_sacado", ""),
-            },
-            "operacao": {
-                "valor_operacao": float(valor_operacao) if "valor_operacao" in locals() else None,
-                "limite_pct_pl_sacado": float(limite_pct_pl_sacado) if "limite_pct_pl_sacado" in locals() else None,
-                "caixa_disponivel": float(caixa_disponivel) if "caixa_disponivel" in locals() else None,
-                "rating_minimo_fundo": st.session_state.get("rating_minimo_fundo", None),
-                "rating_final_operacao": st.session_state.get("rating_cod_final", None),
-            },
-            "comite": {
-                "notas": st.session_state.get("notas_comite", "")
-            }
-        }
+        # buffer em memória
+        buffer = BytesIO()
 
-        # arquivo em JSON (simples, robusto)
-        arquivo_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-        nome_arquivo = f"comite_credito_{agora_file}_{st.session_state.get('cnpj_sacado') or 'sem_cnpj'}.json"
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
+        story = []
 
+        # -------------------------------------------------
+        # RECONSTRÓI ENQUADRAMENTO DO RATING (LOCAL AO PDF)
+        # -------------------------------------------------
+        rating_cod_final = st.session_state.get("rating_cod_final")
+        rating_minimo = st.session_state.get("rating_minimo_fundo")
 
-        # salva timestamp do último "prepare" (visual)
-        st.caption(f"Prévia de geração: {agora_str}")
+        if rating_cod_final and rating_minimo:
+            idx_final = rating_ordem.index(rating_cod_final)
+            idx_min = rating_ordem.index(rating_minimo)
+            enquadrado_rating = idx_final <= idx_min
+        else:
+            enquadrado_rating = False
 
-        # botão de download
-        download = st.download_button(
-            "⬇️ Baixar resumo do comitê",
-            data=arquivo_bytes,
-            file_name=nome_arquivo,
-            mime="application/json",
-            use_container_width=True,
-            key="btn_download_comite"
+        # -------------------------------------------------
+        # SPREAD DE REFERÊNCIA DO RATING (a.a.)
+        # -------------------------------------------------
+        rating_cod_final = st.session_state.get("rating_cod_final")
+
+        if rating_cod_final:
+            spread_ref_aa = SPREAD_POR_RATING.get(rating_cod_final, 0.0)
+        else:
+            spread_ref_aa = 0.0
+
+        # -----------------------------
+        # COMPONENTES EM % a.m.
+        # -----------------------------
+        custo_base_am_pct = st.session_state.get("custo_base_am", 0) * 100   # 0.0145 -> 1.45 (% a.m.)
+
+        spread_rating_am_pct = ((1 + spread_ref_aa) ** (1/12) - 1) * 100     # spread_ref_aa está em decimal a.a.
+
+        premio_estrutural_am_pct = st.session_state.get("premio_estrutural_bps", 0) / 100   # bps -> % a.m.
+        ajuste_relacionamento_am_pct = st.session_state.get("ajuste_total_relacionamento_bps", 0) / 100  # bps -> % a.m.
+
+        pdd_aa_pct = st.session_state.get("pdd_ponderada_view", 0)           # você usa como % a.a. no card
+        pdd_am_pct = pdd_aa_pct / 12                                         # % a.m.
+
+        # -----------------------------
+        # TAXA FINAL (% a.m.)
+        # -----------------------------
+        taxa_final_aprovada_am_pct = (
+            custo_base_am_pct
+            + spread_rating_am_pct
+            + premio_estrutural_am_pct
+            + ajuste_relacionamento_am_pct
+            - pdd_am_pct
         )
 
-        # quando clicar, registra log + timestamp no session_state
-        if download:
-            st.session_state["ultimo_download_comite_em"] = agora_str
+               
+        # ---------- CONTEÚDO ----------
+        story.append(Paragraph("<b>RELATÓRIO DO COMITÊ DE CRÉDITO</b>", styles["Title"]))
+        story.append(Spacer(1, 12))
 
-            # log simples local (se der permissão no ambiente)
-            try:
-                log_item = {
-                    "timestamp": agora_str,
-                    "arquivo": nome_arquivo,
-                    "nome_sacado": st.session_state.get("nome_sacado", ""),
-                    "cnpj_sacado": st.session_state.get("cnpj_sacado", ""),
-                }
-                with open("log_downloads_comite.jsonl", "a", encoding="utf-8") as f:
-                    f.write(json.dumps(log_item, ensure_ascii=False) + "\n")
-            except Exception:
-                pass
+        story.append(Paragraph(f"<b>Data / Hora:</b> {agora_str}", styles["Normal"]))
+        story.append(Spacer(1, 8))
 
-        # mostra último registro
-        if st.session_state.get("ultimo_download_comite_em"):
-            st.success(f"Último arquivo gerado em: {st.session_state['ultimo_download_comite_em']}")
+        story.append(Paragraph(f"<b>Sacado:</b> {st.session_state.get('nome_sacado')}", styles["Normal"]))
+        story.append(Paragraph(f"<b>CNPJ:</b> {st.session_state.get('cnpj_sacado')}", styles["Normal"]))
+        story.append(Spacer(1, 12))
+
+        story.append(Paragraph("<b>Resumo do Comitê</b>", styles["Heading2"]))
+        story.append(Paragraph(st.session_state.get("notas_comite", ""), styles["Normal"]))
+        story.append(Spacer(1, 12))
+
+        story.append(Paragraph("<b>Rating e Enquadramento</b>", styles["Heading2"]))
+        story.append(Paragraph(
+            f"Rating Final: <b>{st.session_state.get('rating_cod_final')}</b>",
+            styles["Normal"]
+        ))
+        story.append(Paragraph(
+            f"Status: <b>{'ENQUADRADO' if enquadrado_rating else 'DESENQUADRADO'}</b>",
+            styles["Normal"]
+        ))
+        story.append(Spacer(1, 12))
+
+        # -------------------------------------------------
+        # ESTRUTURA FINANCEIRA – ÚLTIMO PERÍODO
+        # -------------------------------------------------
+        story.append(Paragraph("<b>Estrutura Financeira – Último Período</b>", styles["Heading2"]))
+
+        indicadores_fin = st.session_state.get("indicadores_financeiros", {})
+
+        for nome, valor in indicadores_fin.items():
+            if valor is None:
+                texto = f"{nome}: n/a"
+            elif "Margem" in nome or "Resultado" in nome:
+                texto = f"{nome}: {valor*100:.2f}%"
+            else:
+                texto = f"{nome}: {valor:.2f}"
+
+            story.append(Paragraph(texto, styles["Normal"]))
+
+        story.append(Spacer(1, 12))
+
+
+        story.append(Paragraph("<b>Precificação</b>", styles["Heading2"]))
+        story.append(Paragraph(
+            f"Custo Base do Fundo: {st.session_state.get('custo_base_am', 0)*100:.2f}% a.m.",
+            styles["Normal"]
+        ))
+        story.append(Paragraph(
+            f"Spread do Rating: {spread_ref_aa*100:.2f}% a.a.",
+            styles["Normal"]
+        ))
+        story.append(Paragraph(
+            f"Prêmio Estrutural: {st.session_state.get('premio_estrutural_bps', 0):+.0f} bps",
+            styles["Normal"]
+        ))
+        story.append(Paragraph(
+            f"Ajuste de Relacionamento: {st.session_state.get('ajuste_total_relacionamento_bps', 0):+.0f} bps",
+            styles["Normal"]
+        ))
+
+        story.append(Spacer(1, 8))
+        story.append(Paragraph(
+        f"TAXA FINAL APROVADA: <b>{taxa_final_aprovada_am_pct:.2f}% a.m.</b>",
+        styles["Normal"]
+    ))
+
+
+
+        # gera PDF
+        doc.build(story)
+        buffer.seek(0)
+
+        nome_arquivo = f"relatorio_comite_{agora_file}_{st.session_state.get('cnpj_sacado') or 'sem_cnpj'}.pdf"
+
+        st.download_button(
+            "⬇️ Baixar relatório do comitê (PDF)",
+            data=buffer,
+            file_name=nome_arquivo,
+            mime="application/pdf",
+            use_container_width=True
+        )
 
         
-
-
         st.markdown("---")
         st.header("🏛️ Enquadramento da Operação no Fundo")
 
@@ -3215,6 +3300,7 @@ with tab_rating:
         st.metric(
             label="Prêmio Estrutural da Operação",
             value=f"{premio_estrutural_bps:.0f} bps",
+            delta=f"{premio_estrutural_bps/100:+.2f}% a.m.",
             help=(
                 "Prêmio adicional exigido em função de riscos operacionais, "
                 "jurídicos e de liquidação da estrutura da operação."
@@ -3495,7 +3581,7 @@ with tab_rating:
                     unsafe_allow_html=True
                 )
 
-            # =========================
+        # =========================
         # 5. INDICADORES ESTRUTURAIS – ÚLTIMO PERÍODO
         # =========================
         st.markdown("### 🧩 Estrutura Financeira – Último Período")
@@ -3537,8 +3623,9 @@ with tab_rating:
             ),
         }
 
-        cols = st.columns(len(indicadores_base))
+        st.session_state["indicadores_financeiros"] = indicadores_base
 
+        cols = st.columns(len(indicadores_base))
         for col, (nome, valor) in zip(cols, indicadores_base.items()):
             with col:
                 st.markdown(
