@@ -2873,9 +2873,30 @@ rating_ordem = [
             "B+", "B", "B-",
             "CCC", "CC", "C",
             ]
-    
+
+
 
 with tab_rating:
+
+    # -------------------------------------------------------------
+    # DEFAULTS PARA VARIÁVEIS COMPARTILHADAS ENTRE SUBABAS
+    # -------------------------------------------------------------
+
+    if "rating_minimo_fundo" not in st.session_state:
+        st.session_state["rating_minimo_fundo"] = "BBB"
+
+    if "rating_cod_final" not in st.session_state:
+        st.session_state["rating_cod_final"] = None
+
+    if "premio_estrutural_bps" not in st.session_state:
+        st.session_state["premio_estrutural_bps"] = 0
+
+    if "ajuste_total_relacionamento_bps" not in st.session_state:
+        st.session_state["ajuste_total_relacionamento_bps"] = 0
+
+    if "custo_base_am" not in st.session_state:
+        st.session_state["custo_base_am"] = 0.0
+
 
     subtab_cadastro, subtab_analise, subtab_taxa = st.tabs([ 
         "📝 Cadastramento da Operação", 
@@ -2885,11 +2906,337 @@ with tab_rating:
 
 
     
+    with subtab_cadastro:
+
+        rating_cod_final = st.session_state.get("rating_cod_final", None)
+        rating_minimo = st.session_state.get("rating_minimo_fundo", "BBB")
+
+        # -------------------------------------------------------------
+        # ANÁLISE DE ENQUADRAMENTO DA OPERAÇÃO NO FUNDO
+        # -------------------------------------------------------------
+        st.markdown("---")
+        st.header("🏛️ Enquadramento da Operação no Fundo")
+
+        # =============================
+        # INPUTS DA OPERAÇÃO E POLÍTICA
+        # =============================
+        col1, col2, col3, col4 = st.columns([1.5, 1.2,1.5, 1.2])
+
+        with col1:
+            valor_operacao = st.number_input(
+                "Valor da Operação (R$)",
+                min_value=0.0,
+                step=10_000.0,
+                value=10_000.0,
+                format="%.2f"
+            )
+
+        with col2:
+            limite_pct_pl_sacado = st.number_input(
+                "Limite por sacado (% do PL)",
+                min_value=0.0,
+                max_value=100.0,
+                value=10.0,
+                step=0.5
+            ) / 100
+
+        with col3:
+            caixa_disponivel = st.number_input(
+                "Caixa disponível no Fundo",
+                min_value=0.0,
+                value=(1-pct_recebiveis)*pl_total,
+                step=10_000.0,
+                format="%.2f"
+            )
+
+       
+        rating_ordem_map = {
+            rating: len(rating_ordem) - idx
+            for idx, rating in enumerate(rating_ordem)
+        }
+
+        
+        with col4:
+            rating_minimo = st.selectbox(
+                "Rating mínimo permitido pelo fundo",
+                rating_ordem,
+                index=rating_ordem.index("BBB"),
+                key="rating_minimo_fundo"
+            )
+
+        
+
+        # =============================
+        # DELTA DE CONCENTRAÇÃO POR SACADO
+        # =============================
+        pct_pl_total = valor_operacao / pl_total if pl_total > 0 else 0
+        excesso_concentracao = pct_pl_total - limite_pct_pl_sacado
+
+        if excesso_concentracao > 0:
+            enquadrado_sacado = False
+            delta_status = f"+{excesso_concentracao*100:.2f} p.p."
+            delta_color = "inverse"  # vermelho
+        else:
+            enquadrado_sacado = True
+            delta_status = f"{excesso_concentracao*100:.2f} p.p."
+            delta_color = "normal"   # verde
+
+       
+
+        # =============================
+        # OUTPUTS VISUAIS
+        # =============================
+        st.markdown("### 📊 Diagnóstico da Operação")
+
+        c1, c2, c3, c4 = st.columns(4)
+
+        c1.metric(
+            "Valor da Operação",
+            f"R$ {valor_operacao:,.0f}"
+        )
+
+        # =============================
+        # STATUS DA OPERAÇÃO POR CONCENTRAÇÃO
+        # =============================
+        if pct_pl_total > limite_pct_pl_sacado:
+            status_operacao = "DESENQUADRADO"
+            delta_color = "inverse"  # vermelho
+        else:
+            status_operacao = "ENQUADRADO"
+            delta_color = "normal"   # verde
+
+
+        pct_pl_total = valor_operacao / pl_total if pl_total > 0 else 0
+        impacto_junior = valor_operacao / valor_junior if valor_junior > 0 else 0
+
+
+        c2.metric(
+            "% do PL Total",
+            f"{pct_pl_total*100:.2f}%",
+            delta=status_operacao,
+            delta_color=delta_color,
+            help=f"Limite máximo permitido por sacado: {limite_pct_pl_sacado*100:.1f}% do PL"
+        )
+
+
+
+        c3.metric(
+            "% do caixa a ser usado",
+            f"{(valor_operacao/caixa_disponivel)*100:.2f}%",
+            )
+
+        c4.metric(
+            "Impacto na Cota Júnior",
+            f"{impacto_junior*100:.2f}%",
+            help="Percentual da cota júnior consumido em caso de default total."
+        )
+
+    # -------------------------------------------------------------
+        # ESTRUTURA DA OPERAÇÃO — PRÊMIO ESTRUTURAL
+        # -------------------------------------------------------------
+        st.markdown("---")
+        st.subheader("📐 Estrutura da Operação — Prêmio de Risco Estrutural")
+
+        st.caption(
+            "Este bloco avalia riscos operacionais e jurídicos da operação que não "
+            "são capturados pelo rating do sacado, ajustando a taxa exigida."
+        )
+
+        # =============================
+        # INPUTS ESTRUTURAIS
+        # =============================
+        col_s1, col_s2 = st.columns(2)
+
+        with col_s1:
+            operacao_confirmada = st.selectbox(
+                "A operação é confirmada?",
+                ["Sim", "Não"],
+                index=0,
+                key="op_confirmada"
+            )
+
+            forma_pagamento = st.selectbox(
+                "Forma de pagamento",
+                ["Boleto emitido pelo FIDC", "Comissária (conta do cedente)"],
+                index=0,
+                key="forma_pagamento"
+            )
+
+        with col_s2:
+            recompra_cedente = st.selectbox(
+                "Existe recompra por parte do cedente?",
+                ["Sim", "Não"],
+                index=0,
+                key="recompra"
+            )
+
+            trava_domicilio = st.selectbox(
+                "Existe trava de domicílio bancário?",
+                ["Sim", "Não"],
+                index=0,
+                key="trava"
+            )
+
+        # =============================
+        # MATRIZ DE AJUSTES (bps)
+        # =============================
+        ajustes_bps = {
+            "operacao_confirmada": 0 if operacao_confirmada == "Sim" else 20,
+            "forma_pagamento": 0 if forma_pagamento == "Boleto emitido pelo FIDC" else 25,
+            "recompra_cedente": 0 if recompra_cedente == "Sim" else 40,
+            "trava_domicilio": 0 if trava_domicilio == "Sim" else 30,
+        }
+
+        premio_estrutural_bps = sum(ajustes_bps.values())
+
+        # =============================
+        # CARD FINAL
+        # =============================
+        st.metric(
+            label="Prêmio Estrutural da Operação",
+            value=f"{premio_estrutural_bps:.0f} bps",
+            help=(
+                "Prêmio adicional exigido em função de riscos operacionais, "
+                "jurídicos e de liquidação da estrutura da operação."
+            )
+        )
+
+        # ============================================================
+        # RACIONAL: RELACIONAMENTO COM O FUNDO E RESTRIÇÕES RECENTES
+        # ============================================================
+
+        st.markdown("### 🤝 Relacionamento e Risco de Momento")
+
+        col_r1, col_r2 = st.columns(2)
+
+        # -----------------------------
+        # INPUTS
+        # -----------------------------
+        with col_r1:
+            tempo_relacionamento = st.selectbox(
+                "Tempo de relacionamento com o fundo",
+                [
+                    "Menos de 3 meses",
+                    "Entre 3 e 12 meses",
+                    "Entre 12 e 36 meses",
+                    "Mais de 36 meses"
+                ]
+            )
+
+        with col_r2:
+            restricoes_recentes = st.selectbox(
+                "Restrições recentes (jurídicas / operacionais)",
+                [
+                    "Nenhuma",
+                    "Leve",
+                    "Moderada",
+                    "Grave"
+                ]
+            )
+
+        # -----------------------------
+        # LÓGICA DE AJUSTE EM BPS
+        # -----------------------------
+        ajuste_relacionamento_bps = 0
+        ajuste_restricao_bps = 0
+        operacao_elegivel = True
+
+        # Relacionamento
+        if tempo_relacionamento == "Menos de 3 meses":
+            ajuste_relacionamento_bps = 20
+        elif tempo_relacionamento == "Entre 3 e 12 meses":
+            ajuste_relacionamento_bps = 0
+        elif tempo_relacionamento == "Entre 12 e 36 meses":
+            ajuste_relacionamento_bps = -10
+        elif tempo_relacionamento == "Mais de 36 meses":
+            ajuste_relacionamento_bps = -20
+
+        # Restrições
+        if restricoes_recentes == "Nenhuma":
+            ajuste_restricao_bps = 0
+        elif restricoes_recentes == "Leve":
+            ajuste_restricao_bps = 25
+        elif restricoes_recentes == "Moderada":
+            ajuste_restricao_bps = 50
+        elif restricoes_recentes == "Grave":
+            operacao_elegivel = False
+
+        # Ajuste total do bloco
+        ajuste_total_relacionamento_bps = ajuste_relacionamento_bps + ajuste_restricao_bps
+        st.session_state["ajuste_total_relacionamento_bps"] = ajuste_total_relacionamento_bps
+
+
+        st.markdown("")
+
+        k1, k2, k3 = st.columns(3)
+
+        k1.metric(
+            "Ajuste por Relacionamento",
+            f"{ajuste_relacionamento_bps:+.0f} bps",
+            help="Impacto do histórico do cedente com o fundo."
+        )
+
+        k2.metric(
+            "Ajuste por Restrições Recentes",
+            f"{ajuste_restricao_bps:+.0f} bps" if operacao_elegivel else "N/A",
+            help="Risco de momento: jurídico, operacional ou comportamental."
+        )
+
+        if operacao_elegivel:
+            k3.metric(
+                "Ajuste Total (Relacionamento)",
+                f"{ajuste_total_relacionamento_bps:+.0f} bps",
+                help="Soma dos ajustes de relacionamento e restrições."
+            )
+        else:
+            k3.metric(
+                "Status da Operação",
+                "NÃO ELEGÍVEL",
+                help="Restrições graves inviabilizam a operação."
+            )
+
+        # -------------------------------------------------
+        # CUSTO BASE DO FUNDO (WACC ECONÔMICO)
+        # -------------------------------------------------
+
+        # Taxas anuais efetivas por cota
+        taxa_senior_aa = cdi_aa + (spread_senior_aa_pct / 100)
+        taxa_mezz_aa   = cdi_aa + (spread_mezz_aa_pct / 100)
+        taxa_junior_aa = cdi_aa  # custo de oportunidade da Júnior
+
+        # PL total já existe
+        # pl_total = valor_junior + valor_mezz + valor_senior
+
+        if pl_total > 0:
+            custo_base_aa = (
+                valor_senior * taxa_senior_aa +
+                valor_mezz   * taxa_mezz_aa +
+                valor_junior * taxa_junior_aa
+            ) / pl_total
+        else:
+            custo_base_aa = 0.0
+
+        # Conversão para mensal
+        custo_base_am = (1 + custo_base_aa) ** (1/12) - 1
+        st.session_state["custo_base_am"] = custo_base_am
+
+
+        st.metric(
+            "Custo Base do Fundo",
+            f"{custo_base_am*100:.2f}% a.m.",
+            help=(
+                "Custo médio ponderado do capital total do fundo. "
+                "Inclui Sênior (CDI + spread), Mezzanino (CDI + spread) "
+                "e Júnior ao custo de oportunidade do CDI."
+            )
+        )
+
     with subtab_analise:
+        
 
         st.markdown("## 📈 Análise Histórica – Dados Financeiros")
         st.caption("Insira os valores históricos (R$). As variações percentuais são calculadas automaticamente.")
-
+        rating_minimo = st.session_state["rating_minimo_fundo"]
         indicadores = [
             "Faturamento",
             "EBITDA",
@@ -3363,6 +3710,16 @@ with tab_rating:
             help="Score agregado com pesos balanceados entre rentabilidade, liquidez, alavancagem e crescimento."
         )
 
+        rating_minimo = st.session_state.get("rating_minimo_fundo", "BBB")
+
+        if rating_cod_final is not None:
+            idx_rating_final = rating_ordem.index(rating_cod_final)
+            idx_rating_min = rating_ordem.index(rating_minimo)
+            enquadrado_rating = idx_rating_final <= idx_rating_min
+        else:
+            enquadrado_rating = False
+
+
         c2.metric(
             "Rating de Crédito",
             rating_final,
@@ -3448,10 +3805,10 @@ with tab_rating:
 
         with col_o2:
             justificativa_override = st.text_area(
-                "Justificativa para override (se houver):",
+                "Justificativa para override:",
                 value="",
                 height=80,
-                placeholder="Ex.: Concentração elevada de sacado, risco jurídico, evento climático recente, governança fraca, etc."
+                placeholder="Ajuste por setor, concentração elevada, ou outros riscos que o Analista encontre"
             )
 
         rating_cod_final, houve_override = aplica_override_rating(
@@ -3460,7 +3817,23 @@ with tab_rating:
             rating_ordem
         )
 
+        st.session_state["rating_cod_final"] = rating_cod_final
 
+        rating_minimo = st.session_state.get("rating_minimo_fundo", "BBB")
+
+        idx_rating_final = rating_ordem.index(rating_cod_final)
+        idx_rating_min = rating_ordem.index(rating_minimo)
+
+        enquadrado_rating = idx_rating_final <= idx_rating_min
+
+        st.metric(
+            "Rating de Crédito",
+            rating_cod_final,
+            delta="ENQUADRADO" if enquadrado_rating else "DESENQUADRADO",
+            delta_color="normal" if enquadrado_rating else "inverse",
+            help=f"Rating mínimo permitido pelo fundo: {rating_minimo}"
+        )
+        
         rating_label_final = rating_cod_final 
 
         st.markdown("### 🏁 Resultado Final do Rating")
@@ -3614,330 +3987,8 @@ with tab_rating:
         st.pyplot(fig)
 
 
-    with subtab_cadastro:
-        # -------------------------------------------------------------
-        # ANÁLISE DE ENQUADRAMENTO DA OPERAÇÃO NO FUNDO
-        # -------------------------------------------------------------
-        st.markdown("---")
-        st.header("🏛️ Enquadramento da Operação no Fundo")
-
-        # =============================
-        # INPUTS DA OPERAÇÃO E POLÍTICA
-        # =============================
-        col1, col2, col3, col4 = st.columns([1.5, 1.2,1.5, 1.2])
-
-        with col1:
-            valor_operacao = st.number_input(
-                "Valor da Operação (R$)",
-                min_value=0.0,
-                step=10_000.0,
-                value=10_000.0,
-                format="%.2f"
-            )
-
-        with col2:
-            limite_pct_pl_sacado = st.number_input(
-                "Limite por sacado (% do PL)",
-                min_value=0.0,
-                max_value=100.0,
-                value=10.0,
-                step=0.5
-            ) / 100
-
-        with col3:
-            caixa_disponivel = st.number_input(
-                "Caixa disponível no Fundo",
-                min_value=0.0,
-                value=(1-pct_recebiveis)*pl_total,
-                step=10_000.0,
-                format="%.2f"
-            )
-
-        with col4:
-            rating_minimo = st.selectbox(
-                "Rating mínimo permitido pelo fundo",
-                rating_ordem,
-                index=rating_ordem.index("BBB"),
-                key="rating_minimo_fundo"
-            )
-
-        # =============================
-        # CÁLCULOS DE ENQUADRAMENTO
-        # =============================
-        pct_pl_total = valor_operacao / pl_total if pl_total > 0 else 0
-        impacto_junior = valor_operacao / valor_junior if valor_junior > 0 else 0
-
-        idx_rating_final = rating_ordem.index(rating_cod_final)
-        idx_rating_min = rating_ordem.index(rating_minimo)
-
-        enquadrado_rating = idx_rating_final <= idx_rating_min
-
-        # =============================
-        # DELTA DE CONCENTRAÇÃO POR SACADO
-        # =============================
-        excesso_concentracao = pct_pl_total - limite_pct_pl_sacado
-
-        if excesso_concentracao > 0:
-            enquadrado_sacado = False
-            delta_status = f"+{excesso_concentracao*100:.2f} p.p."
-            delta_color = "inverse"  # vermelho
-        else:
-            enquadrado_sacado = True
-            delta_status = f"{excesso_concentracao*100:.2f} p.p."
-            delta_color = "normal"   # verde
-
-        # =============================
-        # STATUS FINAL DA OPERAÇÃO
-        # =============================
-        operacao_enquadrada = enquadrado_rating and enquadrado_sacado
-
-        if operacao_enquadrada:
-            status = "ENQUADRADO"
-            cor_status = "green"
-        else:
-            status = "DESENQUADRADO"
-            cor_status = "red"
 
 
-
-        # =============================
-        # OUTPUTS VISUAIS
-        # =============================
-        st.markdown("### 📊 Diagnóstico da Operação")
-
-        c1, c2, c3, c4 = st.columns(4)
-
-        c1.metric(
-            "Valor da Operação",
-            f"R$ {valor_operacao:,.0f}"
-        )
-
-        # =============================
-        # STATUS DA OPERAÇÃO POR CONCENTRAÇÃO
-        # =============================
-        if pct_pl_total > limite_pct_pl_sacado:
-            status_operacao = "DESENQUADRADO"
-            delta_color = "inverse"  # vermelho
-        else:
-            status_operacao = "ENQUADRADO"
-            delta_color = "normal"   # verde
-
-        c2.metric(
-            "% do PL Total",
-            f"{pct_pl_total*100:.2f}%",
-            delta=status_operacao,
-            delta_color=delta_color,
-            help=f"Limite máximo permitido por sacado: {limite_pct_pl_sacado*100:.1f}% do PL"
-        )
-
-
-
-        c3.metric(
-            "% do caixa a ser usado",
-            f"{(valor_operacao/caixa_disponivel)*100:.2f}%",
-            )
-
-        c4.metric(
-            "Impacto na Cota Júnior",
-            f"{impacto_junior*100:.2f}%",
-            help="Percentual da cota júnior consumido em caso de default total."
-        )
-
-    # -------------------------------------------------------------
-        # ESTRUTURA DA OPERAÇÃO — PRÊMIO ESTRUTURAL
-        # -------------------------------------------------------------
-        st.markdown("---")
-        st.subheader("📐 Estrutura da Operação — Prêmio de Risco Estrutural")
-
-        st.caption(
-            "Este bloco avalia riscos operacionais e jurídicos da operação que não "
-            "são capturados pelo rating do sacado, ajustando a taxa exigida."
-        )
-
-        # =============================
-        # INPUTS ESTRUTURAIS
-        # =============================
-        col_s1, col_s2 = st.columns(2)
-
-        with col_s1:
-            operacao_confirmada = st.selectbox(
-                "A operação é confirmada?",
-                ["Sim", "Não"],
-                index=0,
-                key="op_confirmada"
-            )
-
-            forma_pagamento = st.selectbox(
-                "Forma de pagamento",
-                ["Boleto emitido pelo FIDC", "Comissária (conta do cedente)"],
-                index=0,
-                key="forma_pagamento"
-            )
-
-        with col_s2:
-            recompra_cedente = st.selectbox(
-                "Existe recompra por parte do cedente?",
-                ["Sim", "Não"],
-                index=0,
-                key="recompra"
-            )
-
-            trava_domicilio = st.selectbox(
-                "Existe trava de domicílio bancário?",
-                ["Sim", "Não"],
-                index=0,
-                key="trava"
-            )
-
-        # =============================
-        # MATRIZ DE AJUSTES (bps)
-        # =============================
-        ajustes_bps = {
-            "operacao_confirmada": 0 if operacao_confirmada == "Sim" else 20,
-            "forma_pagamento": 0 if forma_pagamento == "Boleto emitido pelo FIDC" else 25,
-            "recompra_cedente": 0 if recompra_cedente == "Sim" else 40,
-            "trava_domicilio": 0 if trava_domicilio == "Sim" else 30,
-        }
-
-        premio_estrutural_bps = sum(ajustes_bps.values())
-
-        # =============================
-        # CARD FINAL
-        # =============================
-        st.metric(
-            label="Prêmio Estrutural da Operação",
-            value=f"{premio_estrutural_bps:.0f} bps",
-            help=(
-                "Prêmio adicional exigido em função de riscos operacionais, "
-                "jurídicos e de liquidação da estrutura da operação."
-            )
-        )
-
-        # ============================================================
-        # RACIONAL: RELACIONAMENTO COM O FUNDO E RESTRIÇÕES RECENTES
-        # ============================================================
-
-        st.markdown("### 🤝 Relacionamento e Risco de Momento")
-
-        col_r1, col_r2 = st.columns(2)
-
-        # -----------------------------
-        # INPUTS
-        # -----------------------------
-        with col_r1:
-            tempo_relacionamento = st.selectbox(
-                "Tempo de relacionamento com o fundo",
-                [
-                    "Menos de 3 meses",
-                    "Entre 3 e 12 meses",
-                    "Entre 12 e 36 meses",
-                    "Mais de 36 meses"
-                ]
-            )
-
-        with col_r2:
-            restricoes_recentes = st.selectbox(
-                "Restrições recentes (jurídicas / operacionais)",
-                [
-                    "Nenhuma",
-                    "Leve",
-                    "Moderada",
-                    "Grave"
-                ]
-            )
-
-        # -----------------------------
-        # LÓGICA DE AJUSTE EM BPS
-        # -----------------------------
-        ajuste_relacionamento_bps = 0
-        ajuste_restricao_bps = 0
-        operacao_elegivel = True
-
-        # Relacionamento
-        if tempo_relacionamento == "Menos de 3 meses":
-            ajuste_relacionamento_bps = 20
-        elif tempo_relacionamento == "Entre 3 e 12 meses":
-            ajuste_relacionamento_bps = 0
-        elif tempo_relacionamento == "Entre 12 e 36 meses":
-            ajuste_relacionamento_bps = -10
-        elif tempo_relacionamento == "Mais de 36 meses":
-            ajuste_relacionamento_bps = -20
-
-        # Restrições
-        if restricoes_recentes == "Nenhuma":
-            ajuste_restricao_bps = 0
-        elif restricoes_recentes == "Leve":
-            ajuste_restricao_bps = 25
-        elif restricoes_recentes == "Moderada":
-            ajuste_restricao_bps = 50
-        elif restricoes_recentes == "Grave":
-            operacao_elegivel = False
-
-        # Ajuste total do bloco
-        ajuste_total_relacionamento_bps = ajuste_relacionamento_bps + ajuste_restricao_bps
-
-        st.markdown("")
-
-        k1, k2, k3 = st.columns(3)
-
-        k1.metric(
-            "Ajuste por Relacionamento",
-            f"{ajuste_relacionamento_bps:+.0f} bps",
-            help="Impacto do histórico do cedente com o fundo."
-        )
-
-        k2.metric(
-            "Ajuste por Restrições Recentes",
-            f"{ajuste_restricao_bps:+.0f} bps" if operacao_elegivel else "N/A",
-            help="Risco de momento: jurídico, operacional ou comportamental."
-        )
-
-        if operacao_elegivel:
-            k3.metric(
-                "Ajuste Total (Relacionamento)",
-                f"{ajuste_total_relacionamento_bps:+.0f} bps",
-                help="Soma dos ajustes de relacionamento e restrições."
-            )
-        else:
-            k3.metric(
-                "Status da Operação",
-                "NÃO ELEGÍVEL",
-                help="Restrições graves inviabilizam a operação."
-            )
-
-        # -------------------------------------------------
-        # CUSTO BASE DO FUNDO (WACC ECONÔMICO)
-        # -------------------------------------------------
-
-        # Taxas anuais efetivas por cota
-        taxa_senior_aa = cdi_aa + (spread_senior_aa_pct / 100)
-        taxa_mezz_aa   = cdi_aa + (spread_mezz_aa_pct / 100)
-        taxa_junior_aa = cdi_aa  # custo de oportunidade da Júnior
-
-        # PL total já existe
-        # pl_total = valor_junior + valor_mezz + valor_senior
-
-        if pl_total > 0:
-            custo_base_aa = (
-                valor_senior * taxa_senior_aa +
-                valor_mezz   * taxa_mezz_aa +
-                valor_junior * taxa_junior_aa
-            ) / pl_total
-        else:
-            custo_base_aa = 0.0
-
-        # Conversão para mensal
-        custo_base_am = (1 + custo_base_aa) ** (1/12) - 1
-
-        st.metric(
-            "Custo Base do Fundo",
-            f"{custo_base_am*100:.2f}% a.m.",
-            help=(
-                "Custo médio ponderado do capital total do fundo. "
-                "Inclui Sênior (CDI + spread), Mezzanino (CDI + spread) "
-                "e Júnior ao custo de oportunidade do CDI."
-            )
-        )
 
     with subtab_taxa:
     # Conversão para percentual mensal
