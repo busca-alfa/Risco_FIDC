@@ -3029,6 +3029,9 @@ with tab_rating:
             - pdd_am_pct
         )
 
+        spread_rating_am = (1 + spread_ref_aa) ** (1/12) - 1
+
+
                
         # ---------- CONTEÚDO ----------
         story.append(Paragraph("<b>RELATÓRIO DO COMITÊ DE CRÉDITO</b>", styles["Title"]))
@@ -3054,7 +3057,12 @@ with tab_rating:
             f"Status: <b>{'ENQUADRADO' if enquadrado_rating else 'DESENQUADRADO'}</b>",
             styles["Normal"]
         ))
+        story.append(Paragraph(
+            f"Spread do Rating (a.a.): {spread_ref_aa*100:.2f}%",
+            styles["Normal"]
+        ))
         story.append(Spacer(1, 12))
+
 
         # -------------------------------------------------
         # ESTRUTURA FINANCEIRA – ÚLTIMO PERÍODO
@@ -3082,9 +3090,10 @@ with tab_rating:
             styles["Normal"]
         ))
         story.append(Paragraph(
-            f"Spread do Rating: {spread_ref_aa*100:.2f}% a.a.",
+            f"Spread do Rating (a.m.): {spread_rating_am*100:.4f}%",
             styles["Normal"]
         ))
+
         story.append(Paragraph(
             f"Prêmio Estrutural: {st.session_state.get('premio_estrutural_bps', 0):+.0f} bps",
             styles["Normal"]
