@@ -2807,36 +2807,6 @@ with tab_dre:
     else:
         st.info("Gere uma simulação com receita positiva para visualizar o fluxo financeiro.")
         
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # -------------------------------------------------------------
 # ESCALA DE RATING DE CRÉDITO
 # -------------------------------------------------------------
@@ -3444,14 +3414,21 @@ with tab_rating:
         st.caption("Insira os valores históricos (R$). As variações percentuais são calculadas automaticamente.")
         rating_minimo = st.session_state["rating_minimo_fundo"]
         indicadores = [
-            "Faturamento",
+            "Faturamento",    
+            "CMV",                    
             "EBITDA",
             "Resultado",
             "Caixa",
-            "Dívida",
+            "Contas a Receber",
+            "Estoques",
+            "Fornecedores",
+            "Dívida CP",              
+            "Dívida Total",           
             "Imobilizado",
             "PL",
         ]
+
+
 
         # =========================
         # 1. INPUT – TABELA EDITÁVEL
@@ -3460,52 +3437,66 @@ with tab_rating:
             st.session_state["hist_input"] = pd.DataFrame(
                 {
                     "P-3": [
-                        80_000_000,   # Faturamento
+                        75_000_000,   # Faturamento Líquido
+                        50_000_000,   # CMV
                         12_000_000,   # EBITDA
                         6_000_000,    # Resultado
                         5_000_000,    # Caixa
-                        15_000_000,   # Dívida
+                        9_000_000,    # Contas a Receber
+                        18_000_000,            # Estoques
+                        6_000_000,    # Fornecedores
+                        4_000_000,    # Dívida CP
+                        15_000_000,   # Dívida Total
                         20_000_000,   # Imobilizado
                         25_000_000,   # PL
                     ],
                     "P-2": [
-                        90_000_000,
+                        85_000_000,
+                        56_000_000,
                         14_000_000,
                         7_000_000,
                         6_000_000,
+                        10_000_000,
+                        19_000_000,
+                        6_500_000,
+                        4_500_000,
                         16_000_000,
                         22_000_000,
                         27_000_000,
                     ],
                     "P-1": [
-                        100_000_000,
+                        95_000_000,
+                        62_000_000,
                         16_000_000,
                         8_000_000,
                         7_000_000,
+                        11_000_000,
+                        17_000_000,
+                        7_200_000,
+                        5_000_000,
                         18_000_000,
                         24_000_000,
                         30_000_000,
                     ],
                     "Atual": [
-                        115_000_000,
+                        110_000_000,
+                        70_000_000,
                         19_000_000,
                         10_000_000,
                         9_000_000,
+                        12_500_000,
+                        21_000_000,
+                        8_000_000,
+                        5_500_000,
                         20_000_000,
                         26_000_000,
                         34_000_000,
                     ],
                 },
-                index=[
-                    "Faturamento",
-                    "EBITDA",
-                    "Resultado",
-                    "Caixa",
-                    "Dívida",
-                    "Imobilizado",
-                    "PL",
-                ]
+                index=indicadores
             )
+
+
 
 
         df_input = st.data_editor(
@@ -3590,6 +3581,242 @@ with tab_rating:
                     unsafe_allow_html=True
                 )
 
+        def score_faixa(valor, faixas):
+            """
+            faixas = [(limite_min, score), ...] ordenado desc
+            """
+            if valor is None or np.isnan(valor):
+                return 0
+            for limite, score in faixas:
+                if valor >= limite:
+                    return score
+            return faixas[-1][1]
+        
+
+        # =========================
+        # 4.5. LIQUIDEZ & CAIXA — PRAZOS OPERACIONAIS (ATUAL)
+        # =========================
+        st.markdown("### 💧 Liquidez & Caixa Operacional — Prazos (Atual)")
+
+        DIAS_BASE = 360  # padrão mercado crédito BR
+
+        def safe_div0(a, b):
+            if b is None or b == 0 or (isinstance(b, float) and np.isnan(b)):
+                return None
+            return a / b
+
+        fat_liq = df_input.loc["Faturamento", "Atual"]
+        cmv = df_input.loc["CMV", "Atual"]
+        caixa = df_input.loc["Caixa", "Atual"]
+        cr = df_input.loc["Contas a Receber", "Atual"]
+        estoques = df_input.loc["Estoques", "Atual"]
+        forn = df_input.loc["Fornecedores", "Atual"]
+        div_cp = df_input.loc["Dívida CP", "Atual"]
+
+        # PMR (base: faturamento líquido)
+        pmr = safe_div0(cr, fat_liq)
+        pmr_dias = (pmr * DIAS_BASE) if pmr is not None else None
+
+        # PME (base: CMV) — regra: se estoque=0 => PME=0
+        if estoques == 0:
+            pme_dias = 0.0
+        else:
+            pme = safe_div0(estoques, cmv)
+            pme_dias = (pme * DIAS_BASE) if pme is not None else None
+
+        # PMP (base: CMV)
+        pmp = safe_div0(forn, cmv)
+        pmp_dias = (pmp * DIAS_BASE) if pmp is not None else None
+
+        # Ciclos
+        ciclo_operacional = None
+        if pmr_dias is not None and pme_dias is not None:
+            ciclo_operacional = pmr_dias + pme_dias
+
+        ciclo_financeiro = None
+        if ciclo_operacional is not None and pmp_dias is not None:
+            ciclo_financeiro = ciclo_operacional - pmp_dias
+
+        # Capital de Giro Operacional (R$)
+        cgo = (cr + estoques - forn)
+
+        # Liquidez de curto prazo (usando Dívida CP inputada)
+        liq_imediata = safe_div0(caixa, div_cp)
+        cobertura_cp = safe_div0(caixa + cr, div_cp)
+
+        k1, k2, k3, k4, k5, k6 = st.columns(6)
+
+        k1.metric("PMR (dias)", f"{pmr_dias:.0f}" if pmr_dias is not None else "n/a")
+        k2.metric("PME (dias)", f"{pme_dias:.0f}" if pme_dias is not None else "n/a")
+        k3.metric("PMP (dias)", f"{pmp_dias:.0f}" if pmp_dias is not None else "n/a")
+
+        k4.metric("Ciclo Operacional", f"{ciclo_operacional:.0f}" if ciclo_operacional is not None else "n/a")
+        k5.metric("Ciclo Financeiro", f"{ciclo_financeiro:.0f}" if ciclo_financeiro is not None else "n/a")
+
+        # CGO e indicadores de cobertura
+        k7, k8, k9 = st.columns(3)
+
+        k7.metric("CGO (R$)", f"R$ {cgo:,.0f}")
+        k8.metric("Liquidez Imediata", f"{liq_imediata:.2f}" if liq_imediata is not None else "n/a")
+        k9.metric("Cobertura CP (Caixa+CR)/Dívida CP", f"{cobertura_cp:.2f}" if cobertura_cp is not None else "n/a")
+
+
+        
+        # =========================
+        # 4.6 SCORES — LIQUIDEZ & CAIXA (CURTO PRAZO)
+        # =========================
+        st.markdown("### 🚦 Score Operacional (Liquidez & Caixa) — Curto Prazo")
+
+        def score_faixa_inversa(valor, faixas):
+            """
+            Para métricas onde MENOR é melhor (ex: PMR, Ciclo Financeiro).
+            faixas = [(limite_max, score), ...] ordenado asc por limite_max.
+            """
+            if valor is None or (isinstance(valor, float) and np.isnan(valor)):
+                return 0
+            for limite_max, score in faixas:
+                if valor <= limite_max:
+                    return score
+            return faixas[-1][1]
+
+        # Scores individuais (0–100)
+        scores_op = {}
+
+        # PMR (dias) — quanto menor, melhor (curto prazo)
+        scores_op["PMR (dias)"] = score_faixa_inversa(
+            pmr_dias,
+            [(30,100), (45,80), (60,60), (90,30), (9999,10)]
+        )
+
+        # PME (dias) — estoque em operação de recebíveis costuma ser baixo; 0 é ótimo.
+        scores_op["PME (dias)"] = score_faixa_inversa(
+            pme_dias,
+            [(15,100), (30,80), (60,50), (90,25), (9999,10)]
+        )
+
+        # PMP (dias) — aqui MAIOR ajuda caixa (até certo ponto). Muito alto pode sinalizar estresse.
+        # Score em “cúpula”: bom quando está no meio (ex: 30–75 dias)
+        def score_pmp(pmp):
+            if pmp is None or (isinstance(pmp, float) and np.isnan(pmp)):
+                return 0
+            if pmp < 15:
+                return 20
+            if 15 <= pmp < 30:
+                return 60
+            if 30 <= pmp <= 75:
+                return 100
+            if 75 < pmp <= 120:
+                return 70
+            return 40
+
+        scores_op["PMP (dias)"] = score_pmp(pmp_dias)
+
+        # Ciclo Financeiro (dias) — MENOR é melhor. Negativo é excelente (fornecedor financia).
+        scores_op["Ciclo Financeiro (dias)"] = score_faixa_inversa(
+            ciclo_financeiro,
+            [(-1,100), (15,90), (30,75), (60,50), (90,25), (9999,10)]
+        )
+
+        # CGO / Receita (proxy) — quanto menor, melhor (menos capital preso)
+        cgo_sobre_receita = safe_div0(cgo, fat_liq)
+        scores_op["CGO / Receita"] = score_faixa_inversa(
+            (cgo_sobre_receita * 100) if cgo_sobre_receita is not None else None,
+            [(5,100), (10,80), (20,60), (30,30), (9999,10)]
+        )
+
+        # Liquidez imediata (Caixa / Dívida CP) — MAIOR é melhor
+        scores_op["Liquidez Imediata"] = score_faixa(
+            liq_imediata,
+            [(1.0,100), (0.5,75), (0.2,40), (0.0,15), (-1,10)]
+        )
+
+        # Cobertura CP (Caixa+CR) / Dívida CP — MAIOR é melhor
+        scores_op["Cobertura CP"] = score_faixa(
+            cobertura_cp,
+            [(2.0,100), (1.2,80), (1.0,60), (0.8,30), (0.0,10), (-1,10)]
+        )
+
+        # Score operacional agregado (pesa o ciclo e PMR, pois é recebível)
+        score_operacional = (
+            0.20 * (scores_op["PMR (dias)"] / 100) +
+            0.10 * (scores_op["PME (dias)"] / 100) +
+            0.15 * (scores_op["PMP (dias)"] / 100) +
+            0.25 * (scores_op["Ciclo Financeiro (dias)"] / 100) +
+            0.10 * (scores_op["CGO / Receita"] / 100) +
+            0.10 * (scores_op["Liquidez Imediata"] / 100) +
+            0.10 * (scores_op["Cobertura CP"] / 100)
+        )
+
+        # Mostra cards dos scores (linha)
+        cols = st.columns(len(scores_op) + 1)
+
+        for col, (nome, sc) in zip(cols, list(scores_op.items()) + [("Score Operacional", round(score_operacional*100))]):
+            with col:
+                st.markdown(
+                    f"""
+                    <div style="
+                        padding:6px;
+                        border-radius:6px;
+                        background:#f9fbff;
+                        border:1px solid #dfe7f3;
+                        text-align:center;
+                        font-size:11px;
+                    ">
+                        <strong>{nome}</strong><br>
+                        <span style="font-size:14px; color:#0d47a1;">
+                            {sc}
+                        </span><br>
+                        <span style="font-size:10px; color:#666;">0–100</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+        # =========================
+        # 4.7 RED FLAGS — LIQUIDEZ & CAIXA
+        # =========================
+        st.markdown("### 🧨 Red Flags — Liquidez & Caixa (Curto Prazo)")
+
+        red_flags = []
+
+        # 1) Cobertura de CP fraca
+        if cobertura_cp is not None and cobertura_cp < 1.0:
+            red_flags.append(f"Cobertura CP < 1,0 (Caixa + Contas a Receber não cobre Dívida CP). Atual: {cobertura_cp:.2f}")
+
+        # 2) Liquidez imediata muito baixa
+        if liq_imediata is not None and liq_imediata < 0.20:
+            red_flags.append(f"Liquidez imediata < 0,20 (Caixa/Dívida CP). Atual: {liq_imediata:.2f}")
+
+        # 3) Ciclo financeiro longo para recebíveis
+        if ciclo_financeiro is not None and ciclo_financeiro > 60:
+            red_flags.append(f"Ciclo financeiro > 60 dias (muito pesado para operação curta). Atual: {ciclo_financeiro:.0f} dias")
+
+        # 4) PMR alto (piora conversão em caixa)
+        if pmr_dias is not None and pmr_dias > 60:
+            red_flags.append(f"PMR > 60 dias (recebimento lento). Atual: {pmr_dias:.0f} dias")
+
+        # 5) Fornecedor “não financia” e empresa banca giro
+        if pmp_dias is not None and pmr_dias is not None and pmp_dias + 10 < pmr_dias:
+            red_flags.append(f"PMP muito abaixo do PMR (empresa financia o giro). PMR: {pmr_dias:.0f} | PMP: {pmp_dias:.0f}")
+
+        # 6) CGO alto vs receita
+        if cgo_sobre_receita is not None and cgo_sobre_receita > 0.20:
+            red_flags.append(f"CGO/Receita > 20% (muito capital preso em giro). Atual: {cgo_sobre_receita*100:.1f}%")
+
+        # Exibição
+        if red_flags:
+            for rf in red_flags:
+                st.warning(rf)
+        else:
+            st.success("Nenhuma red flag relevante detectada nos indicadores de liquidez e caixa (curto prazo).")
+
+        # guarda no session_state para outras abas/relatórios
+        st.session_state["scores_operacionais"] = scores_op
+        st.session_state["score_operacional"] = score_operacional
+        st.session_state["red_flags_operacionais"] = red_flags
+
+
+
         # =========================
         # 5. INDICADORES ESTRUTURAIS – ÚLTIMO PERÍODO
         # =========================
@@ -3610,16 +3837,16 @@ with tab_rating:
                 df_input.loc["EBITDA", "Atual"],
             ),
             "Dívida / EBITDA": safe_div(
-                df_input.loc["Dívida", "Atual"],
+                df_input.loc["Dívida Total", "Atual"],
                 df_input.loc["EBITDA", "Atual"],
             ),
             "Dívida / PL": safe_div(
-                df_input.loc["Dívida", "Atual"],
+                df_input.loc["Dívida Total", "Atual"],
                 df_input.loc["PL", "Atual"],
             ),
             "Caixa / Dívida": safe_div(
                 df_input.loc["Caixa", "Atual"],
-                df_input.loc["Dívida", "Atual"],
+                df_input.loc["Dívida Total", "Atual"],
             ),
             # extras que ajudam MUITO em crédito
             "EBITDA / PL": safe_div(
@@ -3660,17 +3887,7 @@ with tab_rating:
             # =========================
         # 6. SCORES POR INDICADOR
         # =========================
-        def score_faixa(valor, faixas):
-            """
-            faixas = [(limite_min, score), ...] ordenado desc
-            """
-            if valor is None or np.isnan(valor):
-                return 0
-            for limite, score in faixas:
-                if valor >= limite:
-                    return score
-            return faixas[-1][1]
-
+       
         scores = {}
 
         # Crescimento
@@ -3782,7 +3999,7 @@ with tab_rating:
         receita = df.loc["Faturamento", "Atual"]
         ebitda = df.loc["EBITDA", "Atual"]
         caixa = df.loc["Caixa", "Atual"]
-        divida = df.loc["Dívida", "Atual"]
+        divida = df.loc["Dívida Total", "Atual"]
         pl = df.loc["PL", "Atual"]
 
         # =========================
