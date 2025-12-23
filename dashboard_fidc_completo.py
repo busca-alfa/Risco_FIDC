@@ -3784,6 +3784,85 @@ with tab_rating:
         k8.metric("Liquidez Imediata", f"{liq_imediata:.2f}" if liq_imediata is not None else "n/a")
         k9.metric("Cobertura CP (Caixa+CR)/Dívida CP", f"{cobertura_cp:.2f}" if cobertura_cp is not None else "n/a")
 
+       
+        st.markdown("### 🧭 Régua dos Ciclos — Operacional e Financeiro (dias)")
+
+        # Pontos do ciclo (dias)
+        pmr = pmr_dias if pmr_dias is not None else 0
+        pme = pme_dias if pme_dias is not None else 0
+        pmp = pmp_dias if pmp_dias is not None else 0
+
+        ponto_pmr = pmr
+        ponto_pmr_pme = pmr + pme                  # fim do ciclo operacional
+        ponto_pmr_pme_pmp = pmr + pme - pmp        # fim do ciclo financeiro (pode ser negativo)
+
+        # Define range da régua (inclui negativos se houver)
+        min_x = min(0, ponto_pmr_pme_pmp) - 10
+        max_x = max(ponto_pmr_pme, ponto_pmr) + 10
+
+        fig = go.Figure()
+
+        # Barra do Ciclo Operacional: 0 -> PMR+PME
+        fig.add_trace(go.Scatter(
+            x=[0, ponto_pmr_pme],
+            y=[1, 1],
+            mode="lines",
+            line=dict(width=14),
+            name="Ciclo Operacional",
+            hovertemplate="Ciclo Operacional: %{x:.0f} dias<extra></extra>"
+        ))
+
+        # Barra do Ciclo Financeiro: 0 -> PMR+PME-PMP
+        fig.add_trace(go.Scatter(
+            x=[0, ponto_pmr_pme_pmp],
+            y=[0, 0],
+            mode="lines",
+            line=dict(width=14),
+            name="Ciclo Financeiro",
+            hovertemplate="Ciclo Financeiro: %{x:.0f} dias<extra></extra>"
+        ))
+
+        # Marcadores (pontos)
+        marcadores = [
+            ("0", 0),
+            ("PMR", ponto_pmr),
+            ("PMR+PME (Oper.)", ponto_pmr_pme),
+            ("PMR+PME−PMP (Fin.)", ponto_pmr_pme_pmp),
+        ]
+
+        fig.add_trace(go.Scatter(
+            x=[m[1] for m in marcadores],
+            y=[0.5] * len(marcadores),
+            mode="markers+text",
+            text=[m[0] for m in marcadores],
+            textposition="top center",
+            marker=dict(size=10),
+            hovertemplate="%{text}: %{x:.0f} dias<extra></extra>",
+            showlegend=False
+        ))
+
+        # Linha base (régua)
+        fig.add_shape(type="line", x0=min_x, x1=max_x, y0=0.5, y1=0.5, line=dict(width=2))
+
+        fig.update_layout(
+            height=220,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis=dict(range=[min_x, max_x], title="Dias"),
+            yaxis=dict(range=[-0.6, 1.6], visible=False),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # (Opcional) texto interpretativo curto
+        if ciclo_financeiro is not None:
+            if ciclo_financeiro < 0:
+                st.caption("Interpretação: ciclo financeiro negativo indica que fornecedores financiam a operação (boa folga de caixa).")
+            elif ciclo_financeiro > 60:
+                st.caption("Interpretação: ciclo financeiro longo pode pressionar caixa em operações de recebíveis de curto prazo.")
+
+
+
         # =========================
         # 5) SCORE OPERACIONAL — NORMALIZADO (0–100)
         # =========================
