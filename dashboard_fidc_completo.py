@@ -3408,27 +3408,25 @@ with tab_rating:
 
         
     with subtab_analise:
-        
 
         st.markdown("## 📈 Análise Histórica – Dados Financeiros")
         st.caption("Insira os valores históricos (R$). As variações percentuais são calculadas automaticamente.")
         rating_minimo = st.session_state["rating_minimo_fundo"]
+
         indicadores = [
-            "Faturamento",    
-            "CMV",                    
+            "Faturamento",
+            "CMV",
             "EBITDA",
             "Resultado",
             "Caixa",
             "Contas a Receber",
             "Estoques",
             "Fornecedores",
-            "Dívida CP",              
-            "Dívida Total",           
+            "Dívida CP",
+            "Dívida Total",
             "Imobilizado",
             "PL",
         ]
-
-
 
         # =========================
         # 1. INPUT – TABELA EDITÁVEL
@@ -3437,13 +3435,13 @@ with tab_rating:
             st.session_state["hist_input"] = pd.DataFrame(
                 {
                     "P-3": [
-                        75_000_000,   # Faturamento Líquido
+                        75_000_000,   # Faturamento
                         50_000_000,   # CMV
                         12_000_000,   # EBITDA
                         6_000_000,    # Resultado
                         5_000_000,    # Caixa
                         9_000_000,    # Contas a Receber
-                        18_000_000,            # Estoques
+                        18_000_000,   # Estoques
                         6_000_000,    # Fornecedores
                         4_000_000,    # Dívida CP
                         15_000_000,   # Dívida Total
@@ -3493,11 +3491,8 @@ with tab_rating:
                         34_000_000,
                     ],
                 },
-                index=indicadores
+                index=indicadores,
             )
-
-
-
 
         df_input = st.data_editor(
             st.session_state["hist_input"],
@@ -3535,137 +3530,40 @@ with tab_rating:
         with c2:
             st.markdown("### 📊 Variações Percentuais")
             st.dataframe(
-                df_delta.style
-                    .format("{:+.1%}")
-                    .applymap(
-                        lambda v: "color: green;" if v > 0 else "color: red;",
-                    ),
+                df_delta.style.format("{:+.1%}").applymap(
+                    lambda v: "color: green;" if v > 0 else "color: red;"
+                ),
                 use_container_width=True,
             )
 
         # =========================
-        # 4. CAGR – RESUMO VISUAL
+        # FUNÇÕES ÚTEIS (uma vez só)
         # =========================
-        def cagr(v0, v1, anos=3):
-            if v0 > 0 and v1 > 0:
-                return (v1 / v0) ** (1 / anos) - 1
-            return None
-
-        st.markdown("### 📈 Crescimento Estrutural (CAGR)")
-
-        cols = st.columns(len(indicadores))
-
-        for col, ind in zip(cols, indicadores):
-            v_ini = df_input.loc[ind, "P-3"]
-            v_fim = df_input.loc[ind, "Atual"]
-            valor = cagr(v_ini, v_fim)
-
-            with col:
-                st.markdown(
-                    f"""
-                    <div style="
-                        padding:6px;
-                        border-radius:6px;
-                        background:#f7f9fc;
-                        border:1px solid #e0e0e0;
-                        text-align:center;
-                        font-size:11px;
-                    ">
-                        <strong>{ind}</strong><br>
-                        <span style="font-size:13px; color:{'#1a7f37' if valor and valor > 0 else '#c62828'}">
-                            {f"{valor*100:+.1f}%" if valor is not None else "n/a"}
-                        </span><br>
-                        <span style="font-size:10px; color:#666;">CAGR 3 anos</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-        def score_faixa(valor, faixas):
-            """
-            faixas = [(limite_min, score), ...] ordenado desc
-            """
-            if valor is None or np.isnan(valor):
-                return 0
-            for limite, score in faixas:
-                if valor >= limite:
-                    return score
-            return faixas[-1][1]
-        
-
-        # =========================
-        # 4.5. LIQUIDEZ & CAIXA — PRAZOS OPERACIONAIS (ATUAL)
-        # =========================
-        st.markdown("### 💧 Liquidez & Caixa Operacional — Prazos (Atual)")
-
-        DIAS_BASE = 360  # padrão mercado crédito BR
+        def safe_div(a, b):
+            if b is None or (isinstance(b, float) and np.isnan(b)) or b <= 0:
+                return None
+            return a / b
 
         def safe_div0(a, b):
             if b is None or b == 0 or (isinstance(b, float) and np.isnan(b)):
                 return None
             return a / b
 
-        fat_liq = df_input.loc["Faturamento", "Atual"]
-        cmv = df_input.loc["CMV", "Atual"]
-        caixa = df_input.loc["Caixa", "Atual"]
-        cr = df_input.loc["Contas a Receber", "Atual"]
-        estoques = df_input.loc["Estoques", "Atual"]
-        forn = df_input.loc["Fornecedores", "Atual"]
-        div_cp = df_input.loc["Dívida CP", "Atual"]
+        def cagr(v0, v1, anos=3):
+            if v0 > 0 and v1 > 0:
+                return (v1 / v0) ** (1 / anos) - 1
+            return None
 
-        # PMR (base: faturamento líquido)
-        pmr = safe_div0(cr, fat_liq)
-        pmr_dias = (pmr * DIAS_BASE) if pmr is not None else None
-
-        # PME (base: CMV) — regra: se estoque=0 => PME=0
-        if estoques == 0:
-            pme_dias = 0.0
-        else:
-            pme = safe_div0(estoques, cmv)
-            pme_dias = (pme * DIAS_BASE) if pme is not None else None
-
-        # PMP (base: CMV)
-        pmp = safe_div0(forn, cmv)
-        pmp_dias = (pmp * DIAS_BASE) if pmp is not None else None
-
-        # Ciclos
-        ciclo_operacional = None
-        if pmr_dias is not None and pme_dias is not None:
-            ciclo_operacional = pmr_dias + pme_dias
-
-        ciclo_financeiro = None
-        if ciclo_operacional is not None and pmp_dias is not None:
-            ciclo_financeiro = ciclo_operacional - pmp_dias
-
-        # Capital de Giro Operacional (R$)
-        cgo = (cr + estoques - forn)
-
-        # Liquidez de curto prazo (usando Dívida CP inputada)
-        liq_imediata = safe_div0(caixa, div_cp)
-        cobertura_cp = safe_div0(caixa + cr, div_cp)
-
-        k1, k2, k3, k4, k5, k6 = st.columns(6)
-
-        k1.metric("PMR (dias)", f"{pmr_dias:.0f}" if pmr_dias is not None else "n/a")
-        k2.metric("PME (dias)", f"{pme_dias:.0f}" if pme_dias is not None else "n/a")
-        k3.metric("PMP (dias)", f"{pmp_dias:.0f}" if pmp_dias is not None else "n/a")
-
-        k4.metric("Ciclo Operacional", f"{ciclo_operacional:.0f}" if ciclo_operacional is not None else "n/a")
-        k5.metric("Ciclo Financeiro", f"{ciclo_financeiro:.0f}" if ciclo_financeiro is not None else "n/a")
-
-        # CGO e indicadores de cobertura
-        k7, k8, k9 = st.columns(3)
-
-        k7.metric("CGO (R$)", f"R$ {cgo:,.0f}")
-        k8.metric("Liquidez Imediata", f"{liq_imediata:.2f}" if liq_imediata is not None else "n/a")
-        k9.metric("Cobertura CP (Caixa+CR)/Dívida CP", f"{cobertura_cp:.2f}" if cobertura_cp is not None else "n/a")
-
-
-        
-        # =========================
-        # 4.6 SCORES — LIQUIDEZ & CAIXA (CURTO PRAZO)
-        # =========================
-        st.markdown("### 🚦 Score Operacional (Liquidez & Caixa) — Curto Prazo")
+        def score_faixa(valor, faixas):
+            """
+            faixas = [(limite_min, score), ...] ordenado desc
+            """
+            if valor is None or (isinstance(valor, float) and np.isnan(valor)):
+                return 0
+            for limite, score in faixas:
+                if valor >= limite:
+                    return score
+            return faixas[-1][1]
 
         def score_faixa_inversa(valor, faixas):
             """
@@ -3679,184 +3577,29 @@ with tab_rating:
                     return score
             return faixas[-1][1]
 
-        # Scores individuais (0–100)
-        scores_op = {}
-
-        # PMR (dias) — quanto menor, melhor (curto prazo)
-        scores_op["PMR (dias)"] = score_faixa_inversa(
-            pmr_dias,
-            [(30,100), (45,80), (60,60), (90,30), (9999,10)]
-        )
-
-        # PME (dias) — estoque em operação de recebíveis costuma ser baixo; 0 é ótimo.
-        scores_op["PME (dias)"] = score_faixa_inversa(
-            pme_dias,
-            [(15,100), (30,80), (60,50), (90,25), (9999,10)]
-        )
-
-        # PMP (dias) — aqui MAIOR ajuda caixa (até certo ponto). Muito alto pode sinalizar estresse.
-        # Score em “cúpula”: bom quando está no meio (ex: 30–75 dias)
-        def score_pmp(pmp):
-            if pmp is None or (isinstance(pmp, float) and np.isnan(pmp)):
-                return 0
-            if pmp < 15:
-                return 20
-            if 15 <= pmp < 30:
-                return 60
-            if 30 <= pmp <= 75:
-                return 100
-            if 75 < pmp <= 120:
-                return 70
-            return 40
-
-        scores_op["PMP (dias)"] = score_pmp(pmp_dias)
-
-        # Ciclo Financeiro (dias) — MENOR é melhor. Negativo é excelente (fornecedor financia).
-        scores_op["Ciclo Financeiro (dias)"] = score_faixa_inversa(
-            ciclo_financeiro,
-            [(-1,100), (15,90), (30,75), (60,50), (90,25), (9999,10)]
-        )
-
-        # CGO / Receita (proxy) — quanto menor, melhor (menos capital preso)
-        cgo_sobre_receita = safe_div0(cgo, fat_liq)
-        scores_op["CGO / Receita"] = score_faixa_inversa(
-            (cgo_sobre_receita * 100) if cgo_sobre_receita is not None else None,
-            [(5,100), (10,80), (20,60), (30,30), (9999,10)]
-        )
-
-        # Liquidez imediata (Caixa / Dívida CP) — MAIOR é melhor
-        scores_op["Liquidez Imediata"] = score_faixa(
-            liq_imediata,
-            [(1.0,100), (0.5,75), (0.2,40), (0.0,15), (-1,10)]
-        )
-
-        # Cobertura CP (Caixa+CR) / Dívida CP — MAIOR é melhor
-        scores_op["Cobertura CP"] = score_faixa(
-            cobertura_cp,
-            [(2.0,100), (1.2,80), (1.0,60), (0.8,30), (0.0,10), (-1,10)]
-        )
-
-        # Score operacional agregado (pesa o ciclo e PMR, pois é recebível)
-        score_operacional = (
-            0.20 * (scores_op["PMR (dias)"] / 100) +
-            0.10 * (scores_op["PME (dias)"] / 100) +
-            0.15 * (scores_op["PMP (dias)"] / 100) +
-            0.25 * (scores_op["Ciclo Financeiro (dias)"] / 100) +
-            0.10 * (scores_op["CGO / Receita"] / 100) +
-            0.10 * (scores_op["Liquidez Imediata"] / 100) +
-            0.10 * (scores_op["Cobertura CP"] / 100)
-        )
-
-        # Mostra cards dos scores (linha)
-        cols = st.columns(len(scores_op) + 1)
-
-        for col, (nome, sc) in zip(cols, list(scores_op.items()) + [("Score Operacional", round(score_operacional*100))]):
-            with col:
-                st.markdown(
-                    f"""
-                    <div style="
-                        padding:6px;
-                        border-radius:6px;
-                        background:#f9fbff;
-                        border:1px solid #dfe7f3;
-                        text-align:center;
-                        font-size:11px;
-                    ">
-                        <strong>{nome}</strong><br>
-                        <span style="font-size:14px; color:#0d47a1;">
-                            {sc}
-                        </span><br>
-                        <span style="font-size:10px; color:#666;">0–100</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+        # ============================================================
+        # SEQUÊNCIA PEDIDA
+        # 1) Estrutura Financeira – Último Período
+        # 2) Crescimento Estrutural (CAGR)
+        # 3) Score Estrutural Normalizado
+        # 4) Liquidez & Caixa Operacional — Prazos (Atual)
+        # 5) Score Operacional Normalizado
+        # 6) Resultado do Rating Financeiro
+        # ============================================================
 
         # =========================
-        # 4.7 RED FLAGS — LIQUIDEZ & CAIXA
-        # =========================
-        st.markdown("### 🧨 Red Flags — Liquidez & Caixa (Curto Prazo)")
-
-        red_flags = []
-
-        # 1) Cobertura de CP fraca
-        if cobertura_cp is not None and cobertura_cp < 1.0:
-            red_flags.append(f"Cobertura CP < 1,0 (Caixa + Contas a Receber não cobre Dívida CP). Atual: {cobertura_cp:.2f}")
-
-        # 2) Liquidez imediata muito baixa
-        if liq_imediata is not None and liq_imediata < 0.20:
-            red_flags.append(f"Liquidez imediata < 0,20 (Caixa/Dívida CP). Atual: {liq_imediata:.2f}")
-
-        # 3) Ciclo financeiro longo para recebíveis
-        if ciclo_financeiro is not None and ciclo_financeiro > 60:
-            red_flags.append(f"Ciclo financeiro > 60 dias (muito pesado para operação curta). Atual: {ciclo_financeiro:.0f} dias")
-
-        # 4) PMR alto (piora conversão em caixa)
-        if pmr_dias is not None and pmr_dias > 60:
-            red_flags.append(f"PMR > 60 dias (recebimento lento). Atual: {pmr_dias:.0f} dias")
-
-        # 5) Fornecedor “não financia” e empresa banca giro
-        if pmp_dias is not None and pmr_dias is not None and pmp_dias + 10 < pmr_dias:
-            red_flags.append(f"PMP muito abaixo do PMR (empresa financia o giro). PMR: {pmr_dias:.0f} | PMP: {pmp_dias:.0f}")
-
-        # 6) CGO alto vs receita
-        if cgo_sobre_receita is not None and cgo_sobre_receita > 0.20:
-            red_flags.append(f"CGO/Receita > 20% (muito capital preso em giro). Atual: {cgo_sobre_receita*100:.1f}%")
-
-        # Exibição
-        if red_flags:
-            for rf in red_flags:
-                st.warning(rf)
-        else:
-            st.success("Nenhuma red flag relevante detectada nos indicadores de liquidez e caixa (curto prazo).")
-
-        # guarda no session_state para outras abas/relatórios
-        st.session_state["scores_operacionais"] = scores_op
-        st.session_state["score_operacional"] = score_operacional
-        st.session_state["red_flags_operacionais"] = red_flags
-
-
-
-        # =========================
-        # 5. INDICADORES ESTRUTURAIS – ÚLTIMO PERÍODO
+        # 1) ESTRUTURA FINANCEIRA — ÚLTIMO PERÍODO
         # =========================
         st.markdown("### 🧩 Estrutura Financeira – Último Período")
 
-        def safe_div(a, b):
-            if b > 0:
-                return a / b
-            return None
-
         indicadores_base = {
-            "Margem EBITDA": safe_div(
-                df_input.loc["EBITDA", "Atual"],
-                df_input.loc["Faturamento", "Atual"],
-            ),
-            "Caixa / EBITDA": safe_div(
-                df_input.loc["Caixa", "Atual"],
-                df_input.loc["EBITDA", "Atual"],
-            ),
-            "Dívida / EBITDA": safe_div(
-                df_input.loc["Dívida Total", "Atual"],
-                df_input.loc["EBITDA", "Atual"],
-            ),
-            "Dívida / PL": safe_div(
-                df_input.loc["Dívida Total", "Atual"],
-                df_input.loc["PL", "Atual"],
-            ),
-            "Caixa / Dívida": safe_div(
-                df_input.loc["Caixa", "Atual"],
-                df_input.loc["Dívida Total", "Atual"],
-            ),
-            # extras que ajudam MUITO em crédito
-            "EBITDA / PL": safe_div(
-                df_input.loc["EBITDA", "Atual"],
-                df_input.loc["PL", "Atual"],
-            ),
-            "Resultado / Receita": safe_div(
-                df_input.loc["Resultado", "Atual"],
-                df_input.loc["Faturamento", "Atual"],
-            ),
+            "Margem EBITDA": safe_div(df_input.loc["EBITDA", "Atual"], df_input.loc["Faturamento", "Atual"]),
+            "Caixa / EBITDA": safe_div(df_input.loc["Caixa", "Atual"], df_input.loc["EBITDA", "Atual"]),
+            "Dívida / EBITDA": safe_div(df_input.loc["Dívida Total", "Atual"], df_input.loc["EBITDA", "Atual"]),
+            "Dívida / PL": safe_div(df_input.loc["Dívida Total", "Atual"], df_input.loc["PL", "Atual"]),
+            "Caixa / Dívida": safe_div(df_input.loc["Caixa", "Atual"], df_input.loc["Dívida Total", "Atual"]),
+            "EBITDA / PL": safe_div(df_input.loc["EBITDA", "Atual"], df_input.loc["PL", "Atual"]),
+            "Resultado / Receita": safe_div(df_input.loc["Resultado", "Atual"], df_input.loc["Faturamento", "Atual"]),
         }
 
         st.session_state["indicadores_financeiros"] = indicadores_base
@@ -3881,312 +3624,326 @@ with tab_rating:
                         <span style="font-size:10px; color:#777;">Último período</span>
                     </div>
                     """,
-                    unsafe_allow_html=True
+                    unsafe_allow_html=True,
                 )
 
-            # =========================
-        # 6. SCORES POR INDICADOR
         # =========================
-       
-        scores = {}
+        # 2) CRESCIMENTO ESTRUTURAL (CAGR)
+        # =========================
+        st.markdown("### 📈 Crescimento Estrutural (CAGR)")
 
-        # Crescimento
-        scores["CAGR Receita"] = score_faixa(
-            cagr(
-                df_input.loc["Faturamento", "P-3"],
-                df_input.loc["Faturamento", "Atual"]
-            ),
-            [(0.15,100),(0.08,80),(0.03,60),(0.0,40),(-1,10)]
-        )
+        cols = st.columns(len(indicadores))
+        for col, ind in zip(cols, indicadores):
+            v_ini = df_input.loc[ind, "P-3"]
+            v_fim = df_input.loc[ind, "Atual"]
+            valor = cagr(v_ini, v_fim)
 
-        scores["CAGR EBITDA"] = score_faixa(
-            cagr(
-                df_input.loc["EBITDA", "P-3"],
-                df_input.loc["EBITDA", "Atual"]
-            ),
-            [(0.15,100),(0.08,80),(0.03,60),(0.0,40),(-1,10)]
-        )
-
-        # Rentabilidade
-        scores["Margem EBITDA"] = score_faixa(
-            indicadores_base["Margem EBITDA"],
-            [(0.20,100),(0.10,70),(0.05,40),(-1,10)]
-        )
-
-        # Caixa
-        scores["Caixa / EBITDA"] = score_faixa(
-            indicadores_base["Caixa / EBITDA"],
-            [(1.0,100),(0.5,70),(0.0,40),(-1,10)]
-        )
-
-        # Alavancagem
-        scores["Dívida / EBITDA"] = score_faixa(
-            -indicadores_base["Dívida / EBITDA"] if indicadores_base["Dívida / EBITDA"] else None,
-            [(-1.5,100),(-3.0,70),(-5.0,40),(-99,10)]
-        )
-
-        st.markdown("### 🎯 Scores de Crédito – Indicadores")
-
-        with st.expander("📘 Metodologia de Avaliação dos Indicadores", expanded=False):
-            st.markdown("""
-        ### Objetivo do Bloco
-        Este bloco avalia a **qualidade econômico-financeira do sacado** a partir de indicadores
-        extraídos dos demonstrativos históricos, com foco em **capacidade de geração de caixa,
-        alavancagem e liquidez**.
-
-        ### Lógica Geral
-        Os indicadores são analisados individualmente e depois consolidados em um **score sintético**,
-        que alimenta o rating final de crédito.
-
-        A lógica segue três pilares:
-
-        1. **Geração de Caixa**
-        - EBITDA / Faturamento  
-        - EBITDA absoluto e crescimento (CAGR)
-
-        2. **Liquidez e Sustentabilidade**
-        - Caixa / EBITDA  
-        - Caixa / Dívida  
-
-        3. **Alavancagem**
-        - Dívida / EBITDA  
-        - Dívida / PL  
-
-        ### Interpretação
-        - Quanto **maior a geração de caixa** e **menor a alavancagem**, melhor o score.
-        - Indicadores fora de faixas prudenciais geram **penalização progressiva**.
-        - O modelo evita decisões binárias: trabalha com **gradiente de risco**.
-
-        ### Observação Importante
-        Este score **não decide sozinho** o crédito.
-        Ele compõe o rating final junto com:
-        - Histórico de pagamentos
-        - Concentração
-        - Estrutura da operação
-        - Subordinação do FIDC
-        """)
-
-
-        cols = st.columns(len(scores))
-
-        for col, (nome, score) in zip(cols, scores.items()):
             with col:
                 st.markdown(
                     f"""
                     <div style="
                         padding:6px;
                         border-radius:6px;
-                        background:#f9f9f9;
-                        border:1px solid #ddd;
+                        background:#f7f9fc;
+                        border:1px solid #e0e0e0;
+                        text-align:center;
+                        font-size:11px;
+                    ">
+                        <strong>{ind}</strong><br>
+                        <span style="font-size:13px; color:{'#1a7f37' if valor and valor > 0 else '#c62828'}">
+                            {f"{valor*100:+.1f}%" if valor is not None else "n/a"}
+                        </span><br>
+                        <span style="font-size:10px; color:#666;">CAGR 3 anos</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        # =========================
+        # 3) SCORE ESTRUTURAL — NORMALIZADO (0–100)
+        # =========================
+        st.markdown("### 🧱 Score Estrutural — Normalizado")
+
+        cagr_receita = cagr(df_input.loc["Faturamento", "P-3"], df_input.loc["Faturamento", "Atual"])
+
+        scores_estr = {}
+        scores_estr["CAGR Receita"] = score_faixa(
+            cagr_receita,
+            [(0.15, 100), (0.08, 80), (0.03, 60), (0.0, 40), (-1, 10)],
+        )
+        scores_estr["Margem EBITDA"] = score_faixa(
+            indicadores_base["Margem EBITDA"],
+            [(0.20, 100), (0.10, 70), (0.05, 40), (-1, 10)],
+        )
+        scores_estr["Caixa / Dívida"] = score_faixa(
+            indicadores_base["Caixa / Dívida"],
+            [(0.50, 100), (0.30, 80), (0.15, 60), (0.05, 30), (0.0, 10), (-1, 10)],
+        )
+        scores_estr["Dívida / PL"] = score_faixa(
+            -(indicadores_base["Dívida / PL"]) if indicadores_base["Dívida / PL"] is not None else None,
+            [(-0.80, 100), (-1.50, 70), (-2.50, 40), (-99, 10)],
+        )
+        scores_estr["Dívida / EBITDA"] = score_faixa(
+            -(indicadores_base["Dívida / EBITDA"]) if indicadores_base["Dívida / EBITDA"] is not None else None,
+            [(-1.5, 100), (-3.0, 70), (-5.0, 40), (-99, 10)],
+        )
+
+        # pesos estruturais (dentro do bloco estrutural)
+        w_estr = {
+            "Margem EBITDA": 0.25,
+            "Dívida / EBITDA": 0.25,
+            "Caixa / Dívida": 0.20,
+            "Dívida / PL": 0.15,
+            "CAGR Receita": 0.15,
+        }
+
+        score_estrutural = (
+            w_estr["Margem EBITDA"] * (scores_estr["Margem EBITDA"] / 100)
+            + w_estr["Dívida / EBITDA"] * (scores_estr["Dívida / EBITDA"] / 100)
+            + w_estr["Caixa / Dívida"] * (scores_estr["Caixa / Dívida"] / 100)
+            + w_estr["Dívida / PL"] * (scores_estr["Dívida / PL"] / 100)
+            + w_estr["CAGR Receita"] * (scores_estr["CAGR Receita"] / 100)
+        )
+        score_estrutural_norm = round(score_estrutural * 100)
+
+        cols = st.columns(len(scores_estr) + 1)
+        for col, (nome, sc) in zip(cols, list(scores_estr.items()) + [("Score Estrutural", score_estrutural_norm)]):
+            with col:
+                st.markdown(
+                    f"""
+                    <div style="
+                        padding:6px;
+                        border-radius:6px;
+                        background:#f9fbff;
+                        border:1px solid #dfe7f3;
                         text-align:center;
                         font-size:11px;
                     ">
                         <strong>{nome}</strong><br>
-                        <span style="font-size:14px; color:#0d47a1;">
-                            {score}
-                        </span><br>
-                        <span style="font-size:10px; color:#666;">Score (0–100)</span>
+                        <span style="font-size:14px; color:#0d47a1;">{sc}</span><br>
+                        <span style="font-size:10px; color:#666;">0–100</span>
                     </div>
                     """,
-                    unsafe_allow_html=True
+                    unsafe_allow_html=True,
                 )
 
-        # =========================
-        # BASE ÚNICA DE DADOS
-        # =========================
-        df = df_input
-
-        receita = df.loc["Faturamento", "Atual"]
-        ebitda = df.loc["EBITDA", "Atual"]
-        caixa = df.loc["Caixa", "Atual"]
-        divida = df.loc["Dívida Total", "Atual"]
-        pl = df.loc["PL", "Atual"]
+        # guarda estrutural
+        st.session_state["scores_estruturais"] = scores_estr
+        st.session_state["score_estrutural"] = score_estrutural
+        st.session_state["score_estrutural_norm"] = score_estrutural_norm
 
         # =========================
-        # INDICADORES – ÚLTIMO PERÍODO
+        # 4) LIQUIDEZ & CAIXA — PRAZOS OPERACIONAIS (ATUAL)
         # =========================
-        ebitda_margin = ebitda / receita if receita > 0 else np.nan
-        divida_ebitda = divida / ebitda if ebitda > 0 else np.nan
-        caixa_ebitda = caixa / ebitda if ebitda > 0 else np.nan
-        divida_pl = divida / pl if pl > 0 else np.nan
-        caixa_divida = caixa / divida if divida > 0 else np.nan
+        st.markdown("### 💧 Liquidez & Caixa Operacional — Prazos (Atual)")
 
-        # CAGR Receita
-        cagr_receita = cagr(
-            df.loc["Faturamento", "P-3"],
-            df.loc["Faturamento", "Atual"]
+        DIAS_BASE = 360
+
+        fat_liq = df_input.loc["Faturamento", "Atual"]
+        cmv = df_input.loc["CMV", "Atual"]
+        caixa = df_input.loc["Caixa", "Atual"]
+        cr = df_input.loc["Contas a Receber", "Atual"]
+        estoques = df_input.loc["Estoques", "Atual"]
+        forn = df_input.loc["Fornecedores", "Atual"]
+        div_cp = df_input.loc["Dívida CP", "Atual"]
+
+        pmr = safe_div0(cr, fat_liq)
+        pmr_dias = (pmr * DIAS_BASE) if pmr is not None else None
+
+        if estoques == 0:
+            pme_dias = 0.0
+        else:
+            pme = safe_div0(estoques, cmv)
+            pme_dias = (pme * DIAS_BASE) if pme is not None else None
+
+        pmp = safe_div0(forn, cmv)
+        pmp_dias = (pmp * DIAS_BASE) if pmp is not None else None
+
+        ciclo_operacional = None
+        if pmr_dias is not None and pme_dias is not None:
+            ciclo_operacional = pmr_dias + pme_dias
+
+        ciclo_financeiro = None
+        if ciclo_operacional is not None and pmp_dias is not None:
+            ciclo_financeiro = ciclo_operacional - pmp_dias
+
+        cgo = (cr + estoques - forn)
+
+        liq_imediata = safe_div0(caixa, div_cp)
+        cobertura_cp = safe_div0(caixa + cr, div_cp)
+
+        k1, k2, k3, k4, k5, k6 = st.columns(6)
+        k1.metric("PMR (dias)", f"{pmr_dias:.0f}" if pmr_dias is not None else "n/a")
+        k2.metric("PME (dias)", f"{pme_dias:.0f}" if pme_dias is not None else "n/a")
+        k3.metric("PMP (dias)", f"{pmp_dias:.0f}" if pmp_dias is not None else "n/a")
+        k4.metric("Ciclo Operacional", f"{ciclo_operacional:.0f}" if ciclo_operacional is not None else "n/a")
+        k5.metric("Ciclo Financeiro", f"{ciclo_financeiro:.0f}" if ciclo_financeiro is not None else "n/a")
+
+        k7, k8, k9 = st.columns(3)
+        k7.metric("CGO (R$)", f"R$ {cgo:,.0f}")
+        k8.metric("Liquidez Imediata", f"{liq_imediata:.2f}" if liq_imediata is not None else "n/a")
+        k9.metric("Cobertura CP (Caixa+CR)/Dívida CP", f"{cobertura_cp:.2f}" if cobertura_cp is not None else "n/a")
+
+        # =========================
+        # 5) SCORE OPERACIONAL — NORMALIZADO (0–100)
+        # =========================
+        st.markdown("### 🚦 Score Operacional (Liquidez & Caixa) — Curto Prazo — Normalizado")
+
+        scores_op = {}
+
+        scores_op["PMR (dias)"] = score_faixa_inversa(
+            pmr_dias, [(30, 100), (45, 80), (60, 60), (90, 30), (9999, 10)]
+        )
+        scores_op["PME (dias)"] = score_faixa_inversa(
+            pme_dias, [(15, 100), (30, 80), (60, 50), (90, 25), (9999, 10)]
         )
 
-        # =========================
-        # FUNÇÃO DE SCORE NORMALIZADO
-        # =========================
-        def score_interval(valor, bom, medio, inverso=False):
-            if valor is None or np.isnan(valor):
-                return 0.0
-            if inverso:
-                if valor <= bom:
-                    return 1.0
-                elif valor <= medio:
-                    return 0.5
-                else:
-                    return 0.0
-            else:
-                if valor >= bom:
-                    return 1.0
-                elif valor >= medio:
-                    return 0.5
-                else:
-                    return 0.0
+        def score_pmp(pmp_val):
+            if pmp_val is None or (isinstance(pmp_val, float) and np.isnan(pmp_val)):
+                return 0
+            if pmp_val < 15:
+                return 20
+            if 15 <= pmp_val < 30:
+                return 60
+            if 30 <= pmp_val <= 75:
+                return 100
+            if 75 < pmp_val <= 120:
+                return 70
+            return 40
 
-        # =========================
-        # SCORES INDIVIDUAIS
-        # =========================
-        score_ebitda_margin = score_interval(ebitda_margin, 0.20, 0.10)
-        score_divida_ebitda = score_interval(divida_ebitda, 2.0, 4.0, inverso=True)
-        score_caixa_divida = score_interval(caixa_divida, 0.30, 0.10)
-        score_divida_pl = score_interval(divida_pl, 0.80, 1.50, inverso=True)
-        score_cagr = score_interval(cagr_receita, 0.10, 0.03)
+        scores_op["PMP (dias)"] = score_pmp(pmp_dias)
 
-        # =========================
-        # SCORE FINANCEIRO BALANCEADO
-        # =========================
-        score_financeiro = (
-            0.25 * score_ebitda_margin +
-            0.25 * score_divida_ebitda +
-            0.20 * score_caixa_divida +
-            0.15 * score_divida_pl +
-            0.15 * score_cagr
+        scores_op["Ciclo Financeiro (dias)"] = score_faixa_inversa(
+            ciclo_financeiro, [(-1, 100), (15, 90), (30, 75), (60, 50), (90, 25), (9999, 10)]
         )
 
+        cgo_sobre_receita = safe_div0(cgo, fat_liq)
+        scores_op["CGO / Receita"] = score_faixa_inversa(
+            (cgo_sobre_receita * 100) if cgo_sobre_receita is not None else None,
+            [(5, 100), (10, 80), (20, 60), (30, 30), (9999, 10)],
+        )
+
+        scores_op["Liquidez Imediata"] = score_faixa(
+            liq_imediata, [(1.0, 100), (0.5, 75), (0.2, 40), (0.0, 15), (-1, 10)]
+        )
+
+        scores_op["Cobertura CP"] = score_faixa(
+            cobertura_cp, [(2.0, 100), (1.2, 80), (1.0, 60), (0.8, 30), (0.0, 10), (-1, 10)]
+        )
+
+        # pesos operacionais (dentro do bloco operacional) — os que você aprovou
+        w_op = {
+            "Liquidez Imediata": 0.15,
+            "Cobertura CP": 0.15,
+            "PMR (dias)": 0.10,
+            "PMP (dias)": 0.05,
+            "Ciclo Financeiro (dias)": 0.10,
+            "CGO / Receita": 0.05,
+            "PME (dias)": 0.00,  # PME fica “informativo” (estoque pode distorcer recebíveis); pode reativar se quiser
+        }
+
+        # normaliza pesos ativos (caso você ligue PME depois)
+        soma_pesos_op = sum([v for v in w_op.values() if v > 0])
+        w_op_norm = {k: (v / soma_pesos_op if soma_pesos_op > 0 else 0) for k, v in w_op.items()}
+
+        score_operacional = 0.0
+        for k, w in w_op_norm.items():
+            if w <= 0:
+                continue
+            score_operacional += w * (scores_op.get(k, 0) / 100)
+
+        score_operacional_norm = round(score_operacional * 100)
+
+        cols = st.columns(len(scores_op) + 1)
+        for col, (nome, sc) in zip(cols, list(scores_op.items()) + [("Score Operacional", score_operacional_norm)]):
+            with col:
+                st.markdown(
+                    f"""
+                    <div style="
+                        padding:6px;
+                        border-radius:6px;
+                        background:#f9fbff;
+                        border:1px solid #dfe7f3;
+                        text-align:center;
+                        font-size:11px;
+                    ">
+                        <strong>{nome}</strong><br>
+                        <span style="font-size:14px; color:#0d47a1;">{sc}</span><br>
+                        <span style="font-size:10px; color:#666;">0–100</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        st.session_state["scores_operacionais"] = scores_op
+        st.session_state["score_operacional"] = score_operacional
+        st.session_state["score_operacional_norm"] = score_operacional_norm
+
         # =========================
-        # MAPA DE RATING
+        # 6) RESULTADO DO RATING FINANCEIRO
         # =========================
+        st.markdown("## 🏁 Resultado do Rating Financeiro")
+
+        # Score Final: 60% operacional e 40% estrutural (ambos em 0–1)
+        score_final = 0.60 * score_operacional + 0.40 * score_estrutural
+        score_final_norm = round(score_final * 100)
+
         def map_rating(score):
             for code, limite, _ in RATING_CUTS:
                 if score >= limite:
                     return code
             return "CCC"
 
-        rating_final = map_rating(score_financeiro)
+        rating_final = map_rating(score_final)
 
-        # =========================
-        # OUTPUT FINAL
-        # =========================
-        st.markdown("## 🏁 Resultado do Rating Financeiro")
-
-        with st.expander("📘 Metodologia do Rating Financeiro", expanded=False):
-            st.markdown("""
-        ### Objetivo do Rating
-        Este rating busca medir a **capacidade econômico-financeira do sacado** em honrar
-        suas obrigações no curto e médio prazo, com foco em **geração de caixa, liquidez,
-        alavancagem e crescimento**.
-
-        O modelo é **quantitativo, balanceado e explicável**, evitando decisões binárias.
-
-        ---
-
-        ### Estrutura de Pesos do Rating
-
-        | Pilar                  | Indicador                         | Peso |
-        |------------------------|-----------------------------------|------|
-        | **Rentabilidade**      | EBITDA / Receita                  | 25%  |
-        | **Alavancagem**        | Dívida / EBITDA                   | 25%  |
-        | **Liquidez**           | Caixa / Dívida                    | 20%  |
-        | **Estrutura de Capital** | Dívida / PL                     | 15%  |
-        | **Crescimento**        | CAGR do Faturamento (3 anos)      | 15%  |
-
-        ---
-
-        ### Metodologia de Pontuação
-        Cada indicador recebe um **score normalizado entre 0 e 1**, conforme faixas
-        prudenciais típicas de análise de crédito:
-
-        - **1.0** → Faixa saudável  
-        - **0.5** → Zona intermediária  
-        - **0.0** → Faixa de risco elevado  
-
-        Indicadores de risco (ex: Dívida / EBITDA) são avaliados de forma **inversa**
-        — quanto menor, melhor.
-
-        ---
-
-        ### Cálculo do Score Final
-        O score financeiro é a **média ponderada** dos scores individuais:
-
-        > Score Final = Σ (Score do Indicador × Peso)
-
-        Este score é então mapeado para um **rating alfabético**, de AAA a C.
-
-        ---
-
-        ### Observações Importantes
-        - O modelo **não incorpora fatores qualitativos** nesta etapa.
-        - Não há julgamento subjetivo ou override automático.
-        - O rating reflete exclusivamente a **condição financeira histórica**.
-        """)
-
-
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
 
         c1.metric(
-            "Score Financeiro (0–1)",
-            f"{score_financeiro:.2f}",
-            help="Score agregado com pesos balanceados entre rentabilidade, liquidez, alavancagem e crescimento."
+            "Score Operacional (0–100)",
+            f"{score_operacional_norm}",
+            help="Score operacional normalizado (liquidez e caixa de curto prazo). Peso 60% no Score Final.",
         )
-
-        rating_minimo = st.session_state.get("rating_minimo_fundo", "BBB")
-
-        if rating_cod_final is not None:
-            idx_rating_final = rating_ordem.index(rating_cod_final)
-            idx_rating_min = rating_ordem.index(rating_minimo)
-            enquadrado_rating = idx_rating_final <= idx_rating_min
-        else:
-            enquadrado_rating = False
-
 
         c2.metric(
-            "Rating de Crédito",
-            rating_final,
-            help="Rating financeiro sintético, sem fatores qualitativos ou estruturais."
+            "Score Estrutural (0–100)",
+            f"{score_estrutural_norm}",
+            help="Score estrutural normalizado (rentabilidade, alavancagem, liquidez estrutural e crescimento). Peso 40% no Score Final.",
         )
 
-        with st.expander("📊 Escala de Rating e Níveis de Risco", expanded=False):
-            st.markdown("""
-        ### Objetivo da Escala
-        Esta escala traduz o **score financeiro quantitativo** em uma **classificação de risco de crédito**
-        utilizada como referência para decisões em FIDCs.
+        c3.metric(
+            "Score Final (0–100)",
+            f"{score_final_norm}",
+            help="Combinação: 60% Operacional + 40% Estrutural.",
+        )
 
-        ---
+        st.session_state["score_final"] = score_final
+        st.session_state["score_final_norm"] = score_final_norm
+        st.session_state["rating_financeiro_base"] = rating_final
 
-        ### Escala de Rating Financeiro Base
+        st.divider()
 
-        | Rating | Faixa de Score | Nível de Risco | Interpretação |
-        |------|---------------|---------------|--------------|
-        | **AAA** | ≥ 0,90 | **Mínimo** | Estrutura financeira excepcional, alta previsibilidade de caixa |
-        | **AA** | 0,80 – 0,89 | **Muito Baixo** | Empresa muito sólida, baixa probabilidade de estresse |
-        | **A** | 0,70 – 0,79 | **Baixo** | Boa capacidade de pagamento e geração de caixa |
-        | **BBB** | 0,60 – 0,69 | **Moderado** | Estrutura adequada, sensível a ciclos |
-        | **BB** | 0,50 – 0,59 | **Moderado / Elevado** | Risco crescente, exige mitigadores |
-        | **B** | 0,40 – 0,49 | **Elevado** | Fragilidade financeira |
-        | **C** | < 0,40 | **Muito Elevado** | Alto risco de inadimplência |
+        cA, cB = st.columns(2)
+        with cA:
+            st.metric(
+                "Rating de Crédito (Financeiro)",
+                rating_final,
+                help="Rating financeiro sintético derivado do Score Final (60/40).",
+            )
 
-        ---
+        with cB:
+            # Mantém seu rating mínimo do fundo (enquadramento vs rating mínimo será feito na aba/trecho onde você já tem rating_cod_final)
+            st.metric(
+                "Rating mínimo do Fundo",
+                rating_minimo,
+                help="Rating mínimo permitido pelo fundo (referência).",
+            )
 
-        ### Importante
-        Este rating representa o **rating financeiro base do sacado**.
-        O rating final da operação pode diferir em função de:
-        - setor de atuação
-        - histórico de pagamentos
-        - concentração
-        - estrutura do FIDC
-        """)
-
-       
-
-
+        # A partir daqui você pode manter o restante do seu fluxo (override, curva de spreads, etc.)
+        # Se quiser, eu ajusto também o trecho de override para usar como base o rating_final acima (score_final),
+        # mas deixei exatamente como você já vinha utilizando na aba.
 
         # -------------------------------------------------------------
-        # OVERRIDE DE RATING (JULGAMENTO)
+        # OVERRIDE DE RATING (JULGAMENTO) — MANTÉM COMO ESTAVA
         # -------------------------------------------------------------
         st.markdown("---")
         st.header("🧭 Ajuste de Julgamento (Override de Rating)")
@@ -4244,7 +4001,7 @@ with tab_rating:
         enquadrado_rating = idx_rating_final <= idx_rating_min
 
         # -------------------------------------------------------------
-        # SPREAD INDICATIVO EM FAIXA (POR RATING) — PRECISA VIR ANTES DOS CARDS
+        # SPREAD INDICATIVO EM FAIXA (POR RATING) — MANTÉM COMO ESTAVA
         # -------------------------------------------------------------
         idx = rating_ordem.index(rating_cod_final)
 
@@ -4260,9 +4017,6 @@ with tab_rating:
         taxa_mensal_min_calc = (1 + taxa_total_anual_min) ** (1/12) - 1
         taxa_mensal_max_calc = (1 + taxa_total_anual_max) ** (1/12) - 1
 
-        # -------------------------------------------------------------
-        # CARDS — APENAS 2 (Rating + Taxa Indicativa) LADO A LADO
-        # -------------------------------------------------------------
         col_r1, col_r_spread, col_r2 = st.columns([1, 1, 1])
 
         with col_r1:
@@ -4274,20 +4028,18 @@ with tab_rating:
                 help=f"Rating mínimo permitido pelo fundo: {rating_minimo}"
             )
 
-
         with col_r_spread:
-            spread_ref_aa = SPREAD_POR_RATING.get(rating_cod_final, 0.0)   # spread a.a. do rating atual
-            spread_ref_am = (1 + spread_ref_aa) ** (1/12) - 1              # spread a.m. (juros compostos)
+            spread_ref_aa = SPREAD_POR_RATING.get(rating_cod_final, 0.0)
+            spread_ref_am = (1 + spread_ref_aa) ** (1/12) - 1
 
             st.metric(
                 "Spread do Rating",
                 f"{spread_ref_aa*100:.2f}% a.a.",
                 delta=f"{spread_ref_am*100:.4f}% a.m.",
-                help="Spread indicado para o rating calculado no card de Rating de Crédito."
+                help="Spread indicado para o rating calculado."
             )
 
         with col_r2:
-            # Spread mínimo/máximo já calculados acima (spread_min/spread_max) — ambos a.a.
             spread_min_am = (1 + spread_min) ** (1/12) - 1
             spread_max_am = (1 + spread_max) ** (1/12) - 1
 
@@ -4299,11 +4051,10 @@ with tab_rating:
                     f"a {spread_max_am*100:.4f}% a.m."
                 ),
                 help=(
-                    "O valor principal é a faixa de spread anual por rating adjacente.\n"
-                    "O valor em verde é o spread convertido para mês (juros compostos)."
+                    "Valor principal: faixa anual por rating adjacente.\n"
+                    "Delta: faixa mensal equivalente (juros compostos)."
                 )
             )
-
 
         # -------------------------------------------------------------
         # GRÁFICO (mantém como estava)
@@ -4320,28 +4071,11 @@ with tab_rating:
 
         fig, ax = plt.subplots(figsize=(10, 4))
 
-        ax.plot(
-            ratings,
-            spreads,
-            marker="o",
-            linewidth=2
-        )
+        ax.plot(ratings, spreads, marker="o", linewidth=2)
 
-        ax.axvspan(
-            x_min,
-            x_max,
-            alpha=0.20,
-            label="Faixa Indicativa de taxa"
-        )
+        ax.axvspan(x_min, x_max, alpha=0.20, label="Faixa Indicativa de taxa")
 
-        ax.scatter(
-            rating_atual,
-            spread_atual,
-            color="red",
-            s=120,
-            zorder=5,
-            label="Rating Atual"
-        )
+        ax.scatter(rating_atual, spread_atual, color="red", s=120, zorder=5, label="Rating Atual")
 
         ax.annotate(
             f"{rating_atual}\nCDI + {spread_atual*100:.2f}%",
@@ -4365,8 +4099,6 @@ with tab_rating:
 
         fig.tight_layout()
         st.pyplot(fig)
-
-
 
 
 
