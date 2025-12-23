@@ -3768,7 +3768,7 @@ with tab_rating:
             ciclo_financeiro = ciclo_operacional - pmp_dias
 
         cgo = (cr + estoques - forn)
-
+        cgo_sobre_receita = safe_div0(cgo, fat_liq)
         liq_imediata = safe_div0(caixa, div_cp)
         cobertura_cp = safe_div0(caixa + cr, div_cp)
 
@@ -3780,7 +3780,15 @@ with tab_rating:
         k5.metric("Ciclo Financeiro", f"{ciclo_financeiro:.0f}" if ciclo_financeiro is not None else "n/a")
 
         k7, k8, k9 = st.columns(3)
-        k7.metric("CGO (R$)", f"R$ {cgo:,.0f}")
+        k7.metric(
+            "CGO (R$)",
+            f"R$ {cgo:,.0f}",
+            delta=(
+                f"{(cgo_sobre_receita * 100):.1f}% da Receita"
+                if cgo_sobre_receita is not None
+                else "n/a"
+            ),
+            help="Capital de Giro Operacional absoluto e sua proporção sobre o faturamento.")
         k8.metric("Liquidez Imediata", f"{liq_imediata:.2f}" if liq_imediata is not None else "n/a")
         k9.metric("Cobertura CP (Caixa+CR)/Dívida CP", f"{cobertura_cp:.2f}" if cobertura_cp is not None else "n/a")
 
@@ -3824,7 +3832,7 @@ with tab_rating:
 
         # Marcadores (pontos)
         marcadores = [
-            ("0", 0),
+            ("Pgto ao Fornecedor", 0),
             ("PMR", ponto_pmr),
             ("PMR+PME (Oper.)", ponto_pmr_pme),
             ("PMR+PME−PMP (Fin.)", ponto_pmr_pme_pmp),
